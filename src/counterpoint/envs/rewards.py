@@ -36,6 +36,25 @@ class BlackKeyChangePenalty(RewardComponent):
         changed_count = np.sum(np.abs(np.array(fingers_black) - np.array(prev_blacks)))
         return -(changed_count * 0.2)
 
+class WrongColorPenalty(RewardComponent):
+    """Penalize pressing wrong color key for current target."""
+    def calculate(self, env, action, **kwargs):
+        if env._current_step >= len(env._score_targets):
+            return 0.0
+        
+        target_note, target_is_black = env._score_targets[env._current_step]
+        fingers_pressed = action["fingers"]
+        fingers_black = action["fingers_black"]
+        
+        penalty = 0.0
+        for i, pressed in enumerate(fingers_pressed):
+            if pressed == 1:
+                is_black_pressed = fingers_black[i] == 1
+                if is_black_pressed != bool(target_is_black):
+                    penalty -= 2.0  # Each wrong-color finger: -2
+        return penalty
+
+
 class AccuracyReward(RewardComponent):
     def calculate(self, env, action, **kwargs):
         if env._current_step >= len(env._score_targets):
@@ -64,33 +83,42 @@ class AccuracyReward(RewardComponent):
             else:
                 false_note_played = True
         
-        reward = 0.0
-        terminated = False
-        
         if correct_note_played and not false_note_played:
-            reward += 10.0
-            # Note: We don't advance step here in reward calc, Env does it.
-            # But we need to signal success? 
-            # The original code mixes state update logic (advancing step) with reward calc.
-            # "Reward function" technically should just return reward.
-            # But here `terminated` logic is coupled.
-            # We'll return reward and let Env handle state update based on logic?
-            # Or should this component return (reward, success)?
             return 10.0, True # Success
         else:
-            return -100.0, False # Failure
+            return -10.0, False # Failure (reduced from -100)
+
+
+class CompletionReward(RewardComponent):
+    """Reward for completing the entire score."""
+    
+    def __init__(self, bonus: float = 50.0):
+        self.bonus = bonus
+    
+    def calculate(self, env, action, **kwargs):
+        # Only give bonus on the last note of the score
+        # The AccuracyReward handles success/failure - this just adds extra incentive
+        is_last_note = (env._current_step == len(env._score_targets) - 1)
+        if is_last_note:
+            return self.bonus
+        return 0.0
 
 class RewardMixing:
     def __init__(self):
         self.components = []
+        self.completion_components = []
         
     def add(self, component):
-        self.components.append(component)
+        if isinstance(component, CompletionReward):
+            self.completion_components.append(component)
+        else:
+            self.components.append(component)
         
     def calculate(self, env, action):
         total_reward = 0.0
-        success = False # Only relevant for AccuracyReward usually
+        success = False
         
+        # Calculate standard rewards
         for comp in self.components:
             res = comp.calculate(env, action)
             if isinstance(res, tuple):
@@ -100,5 +128,10 @@ class RewardMixing:
                     success = True
             else:
                 total_reward += res
+        
+        # Only add completion rewards if the step was successful
+        if success:
+            for comp in self.completion_components:
+                total_reward += comp.calculate(env, action)
                 
         return total_reward, success

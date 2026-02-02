@@ -12,7 +12,7 @@ from skrl.memories.torch import RandomMemory
 from skrl.trainers.torch import SequentialTrainer
 from skrl.utils import set_seed
 
-from counterpoint.policies import SimpleBaselinePolicy, Value, FlattenActionWrapper
+from counterpoint.policies import SimpleBaselinePolicy, SimpleBaselineValue, FlattenActionWrapper
 
 def load_config(path="conf/base.yaml"):
     with open(path, "r") as f:
@@ -45,7 +45,7 @@ def train(steps=None, resume_path=None):
     # Define Agent
     models = {}
     models["policy"] = SimpleBaselinePolicy(env.observation_space, env.action_space, device)
-    models["value"] = Value(env.observation_space, env.action_space, device)
+    models["value"] = SimpleBaselineValue(env.observation_space, env.action_space, device)
 
     # Memory
     memory = RandomMemory(memory_size=config["training"]["rollouts"], num_envs=env.num_envs, device=device)
@@ -116,7 +116,7 @@ def test(path=None):
     # Define Agent
     models = {}
     models["policy"] = SimpleBaselinePolicy(env.observation_space, env.action_space, device)
-    models["value"] = Value(env.observation_space, env.action_space, device)
+    models["value"] = SimpleBaselineValue(env.observation_space, env.action_space, device)
 
     from skrl.agents.torch.ppo import PPO_DEFAULT_CONFIG
     cfg_agent = PPO_DEFAULT_CONFIG.copy()

@@ -5,7 +5,8 @@ import matplotlib.pyplot as plt
 from gymnasium import spaces
 
 from counterpoint.envs.render.piano_render import PianoRenderer
-from counterpoint.envs.rewards import RewardMixing, MovementPenalty, BlackKeyChangePenalty, AccuracyReward
+from counterpoint.envs.rewards import RewardMixing, MovementPenalty, BlackKeyChangePenalty, WrongColorPenalty, AccuracyReward, CompletionReward
+from counterpoint.envs.score_generators import MajorScaleGenerator
 
 class PianoEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
@@ -29,7 +30,8 @@ class PianoEnv(gym.Env):
         # --- Observation Space ---
         self.observation_space = spaces.Dict({
             "grid": spaces.Box(low=0, high=1, shape=(self.ROWS, self.PITCH_RANGE, self.LOOKAHEAD), dtype=np.float32),
-            "hand_state": spaces.Box(low=0, high=self.PITCH_RANGE, shape=(1,), dtype=np.float32)
+            "hand_state": spaces.Box(low=0, high=self.PITCH_RANGE, shape=(1,), dtype=np.float32),
+            "relative_target": spaces.Box(low=-self.PITCH_RANGE, high=self.PITCH_RANGE, shape=(1,), dtype=np.float32)
         })
 
         # State
@@ -40,10 +42,13 @@ class PianoEnv(gym.Env):
         
         # Helper Modules
         self.renderer = PianoRenderer(self.PITCH_RANGE, self.LOOKAHEAD, self.render_mode)
+        self.score_generator = MajorScaleGenerator(self.PITCH_RANGE)
         self.reward_function = RewardMixing()
         self.reward_function.add(MovementPenalty())
         self.reward_function.add(BlackKeyChangePenalty())
+        self.reward_function.add(WrongColorPenalty())
         self.reward_function.add(AccuracyReward())
+        self.reward_function.add(CompletionReward(bonus=50.0))
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
@@ -53,30 +58,9 @@ class PianoEnv(gym.Env):
         self._hand_pos = self.np_random.integers(0, self.PITCH_RANGE - 5) 
         self._last_action = None
         
-        self._generate_simple_score()
+        self._score_targets = self.score_generator.generate(self.np_random)
         
         return self._get_obs(), {}
-
-    def _generate_simple_score(self):
-        # 1. Determine Length (5 to 12)
-        length = self.np_random.integers(5, 13)
-        start_note = self.np_random.integers(10, self.PITCH_RANGE - 15)
-        direction = 1
-        current_note = start_note
-        
-        self._score_targets = []
-        if length > 4:
-            reverse_at = self.np_random.integers(2, length - 2)
-        else:
-            reverse_at = -1
-
-        for i in range(length):
-            # Record Target: (Note Index, Is Black?)
-            self._score_targets.append((current_note, 0)) # 0 for Natural
-            
-            if i == reverse_at:
-                direction *= -1
-            current_note += direction
 
     def step(self, action):
         target_hand_pos = action["hand_position"]
@@ -97,7 +81,6 @@ class PianoEnv(gym.Env):
                  self._current_step += 1
                  if self._current_step >= len(self._score_targets):
                       terminated = True
-                      total_reward += 50.0
              else:
                  # Logic for failure (wrong note or invalid)
                  # In this env, !success means failure if step < len
@@ -129,10 +112,18 @@ class PianoEnv(gym.Env):
                         grid[1, note, t] = 1.0 # Accidental Row
                     else:
                         grid[0, note, t] = 1.0 # Natural Row
+        
+        # Compute relative target position
+        if self._current_step < len(self._score_targets):
+            target_note, _ = self._score_targets[self._current_step]
+            relative_target = float(target_note - self._hand_pos)
+        else:
+            relative_target = 0.0
                     
         return {
             "grid": grid,
-            "hand_state": np.array([self._hand_pos], dtype=np.float32)
+            "hand_state": np.array([self._hand_pos], dtype=np.float32),
+            "relative_target": np.array([relative_target], dtype=np.float32)
         }
 
     def close(self):

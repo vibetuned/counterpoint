@@ -31,7 +31,7 @@ class SimpleBaselinePolicy(MultiCategoricalMixin, Model):
 
         # Input is Dict
         # Manually calc size: (2*52*10) + 1 = 1041
-        self.input_size = 1041
+        self.input_size = 1042  # (2*52*10) + 1 + 1 = grid + hand_state + relative_target
         
         self.net = nn.Sequential(
             nn.Linear(self.input_size, 512),
@@ -48,12 +48,12 @@ class SimpleBaselinePolicy(MultiCategoricalMixin, Model):
         return self.net(x), {}
 
 # Value Model
-class Value(DeterministicMixin, Model):
+class SimpleBaselineValue(DeterministicMixin, Model):
     def __init__(self, observation_space, action_space, device, clip_actions=False):
         Model.__init__(self, observation_space, action_space, device)
         DeterministicMixin.__init__(self, clip_actions)
 
-        self.input_size = 1041
+        self.input_size = 1042  # (2*52*10) + 1 + 1 = grid + hand_state + relative_target
         self.net = nn.Sequential(
             nn.Linear(self.input_size, 512),
             nn.ReLU(),

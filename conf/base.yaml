@@ -1,0 +1,24 @@
+experiment:
+  directory: "runs/piano_ppo"
+  write_interval: 100
+  checkpoint_interval: 10000
+
+# Training defaults
+training:
+  timesteps: 100000
+  rollouts: 1024
+  learning_epochs: 10
+  mini_batches: 32
+  learning_rate: 1e-3
+  discount_factor: 0.99
+  lambda_gae: 0.95
+  grad_norm_clip: 0.5
+  ratio_clip: 0.2
+  value_loss_scale: 0.5
+  entropy_loss_scale: 0.01
+
+env:
+  name: "Piano-v0"
+  pitch_range: 52
+  rows: 2
+  lookahead: 10

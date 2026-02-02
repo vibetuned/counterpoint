@@ -43,11 +43,23 @@ def verify_env(render: bool = False):
             env.close()
 
 @app.command()
-def train():
+def train(
+    steps: int = typer.Option(100000, help="Number of training steps"),
+    resume: str = typer.Option(None, help="Path to checkpoint file to resume from")
+):
     """
-    Stub for training command.
+    Run SKRL PPO training.
     """
-    print("Training not implemented yet.")
+    from counterpoint.train import train as train_loop
+    train_loop(steps=steps, resume_path=resume)
+
+@app.command()
+def test(checkpoint: str = typer.Option(None, help="Path to checkpoint file")):
+    """
+    Test the trained model with rendering.
+    """
+    from counterpoint.train import test as test_loop
+    test_loop(path=checkpoint)
 
 if __name__ == "__main__":
     app()

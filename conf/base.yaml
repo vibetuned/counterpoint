@@ -22,3 +22,7 @@ env:
   pitch_range: 52
   rows: 2
   lookahead: 10
+
+# Policy architecture: simple, conv, or transformer
+policy:
+  type: "transformer"  # Options: simple, conv, transformer

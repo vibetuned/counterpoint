@@ -12,7 +12,30 @@ from skrl.memories.torch import RandomMemory
 from skrl.trainers.torch import SequentialTrainer
 from skrl.utils import set_seed
 
-from counterpoint.policies import SimpleBaselinePolicy, SimpleBaselineValue, FlattenActionWrapper
+from counterpoint.policies import (
+    FlattenActionWrapper,
+    SimpleBaselinePolicy, SimpleBaselineValue,
+    ConvPolicy, ConvValue,
+    TransformerPolicy, TransformerValue,
+)
+
+# Policy registry
+POLICY_REGISTRY = {
+    "simple": (SimpleBaselinePolicy, SimpleBaselineValue),
+    "conv": (ConvPolicy, ConvValue),
+    "transformer": (TransformerPolicy, TransformerValue),
+}
+
+def get_models(policy_type, observation_space, action_space, device):
+    """Get policy and value models based on architecture type."""
+    if policy_type not in POLICY_REGISTRY:
+        raise ValueError(f"Unknown policy type: {policy_type}. Available: {list(POLICY_REGISTRY.keys())}")
+    
+    policy_cls, value_cls = POLICY_REGISTRY[policy_type]
+    return {
+        "policy": policy_cls(observation_space, action_space, device),
+        "value": value_cls(observation_space, action_space, device),
+    }
 
 def load_config(path="conf/base.yaml"):
     with open(path, "r") as f:
@@ -42,10 +65,10 @@ def train(steps=None, resume_path=None):
     env = FlattenActionWrapper(env)
     env = wrap_env(env) # SKRL wrapper
 
-    # Define Agent
-    models = {}
-    models["policy"] = SimpleBaselinePolicy(env.observation_space, env.action_space, device)
-    models["value"] = SimpleBaselineValue(env.observation_space, env.action_space, device)
+    # Define Agent - select architecture from config
+    policy_type = config.get("policy", {}).get("type", "simple")
+    print(f"Using policy architecture: {policy_type}")
+    models = get_models(policy_type, env.observation_space, env.action_space, device)
 
     # Memory
     memory = RandomMemory(memory_size=config["training"]["rollouts"], num_envs=env.num_envs, device=device)
@@ -113,10 +136,10 @@ def test(path=None):
     env = FlattenActionWrapper(env)
     env = wrap_env(env)
 
-    # Define Agent
-    models = {}
-    models["policy"] = SimpleBaselinePolicy(env.observation_space, env.action_space, device)
-    models["value"] = SimpleBaselineValue(env.observation_space, env.action_space, device)
+    # Define Agent - select architecture from config
+    policy_type = config.get("policy", {}).get("type", "simple")
+    print(f"Using policy architecture: {policy_type}")
+    models = get_models(policy_type, env.observation_space, env.action_space, device)
 
     from skrl.agents.torch.ppo import PPO_DEFAULT_CONFIG
     cfg_agent = PPO_DEFAULT_CONFIG.copy()

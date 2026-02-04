@@ -25,4 +25,4 @@ env:
 
 # Policy architecture: simple, conv, or transformer
 policy:
-  type: "decoder"  # Options: simple, conv, transformer, decoder
+  type: "conv"  # Options: simple, conv, transformer, decoder

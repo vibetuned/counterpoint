@@ -41,11 +41,13 @@ class PianoEnv(gym.Env):
         })
 
         # State
-        self._current_step = 0
+        self._current_step = 0  # Current position in score (note index)
+        self._step_count = 0     # Total actions taken in episode
         self._hand_pos = 0  # Current hand anchor position
         self._episode_count = -1 
         self._last_action = None
         self._derived_hand_pos = 0  # Hand position derived from current action
+        self._max_steps_multiplier = 3  # Max steps = score_length * this
         
         # Helper Modules
         self.renderer = PianoRenderer(self.PITCH_RANGE, self.LOOKAHEAD, self.render_mode)
@@ -63,6 +65,7 @@ class PianoEnv(gym.Env):
         self._episode_count += 1
         
         self._current_step = 0
+        self._step_count = 0
         self._last_action = None
         
         self._score_targets = self.score_generator.generate(self.np_random)
@@ -102,6 +105,8 @@ class PianoEnv(gym.Env):
         return self._hand_pos
 
     def step(self, action):
+        self._step_count += 1  # Track total actions
+        
         # Compute derived hand position from fingering
         self._derived_hand_pos = self._compute_hand_position(action)
         
@@ -118,15 +123,20 @@ class PianoEnv(gym.Env):
         terminated = False
         truncated = False
         
+        # Check for max steps (truncation to prevent infinite episodes)
+        max_steps = len(self._score_targets) * self._max_steps_multiplier
+        if self._step_count >= max_steps:
+            truncated = True
+        
         if self._current_step < len(self._score_targets):
             if success:
-                # Correct note played
+                # Correct note played - advance to next
                 self._current_step += 1
                 if self._current_step >= len(self._score_targets):
-                    terminated = True
-            else:
-                # Wrong note - terminate
-                terminated = True
+                    terminated = True  # Score completed!
+            # Wrong note: DON'T terminate, just don't advance
+            # Agent is penalized and must try again on same note
+            # This maintains ergodicity and allows full exploration
         else:
             terminated = True 
 

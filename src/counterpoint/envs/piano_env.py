@@ -5,26 +5,32 @@ import matplotlib.pyplot as plt
 from gymnasium import spaces
 
 from counterpoint.envs.render.piano_render import PianoRenderer
-from counterpoint.envs.rewards import RewardMixing, MovementPenalty, BlackKeyChangePenalty, WrongColorPenalty, AccuracyReward, CompletionReward
+from counterpoint.envs.rewards import RewardMixing, MovementPenalty, WrongColorPenalty, AccuracyReward, CompletionReward, KeyChangePenalty, FingerRepetitionPenalty
 from counterpoint.envs.score_generators import MajorScaleGenerator
 
+
 class PianoEnv(gym.Env):
+    """
+    Piano fingering environment.
+    
+    The agent learns fingering patterns only - hand position is automatically
+    derived from the leftmost pressed finger aligning with the leftmost target note.
+    """
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
     def __init__(self, render_mode=None):
         super().__init__()
         
         # --- Constants ---
-        self.PITCH_RANGE = 52 # Number of white keys (columns)
-        self.ROWS = 2 # 0: Natural, 1: Accidental
+        self.PITCH_RANGE = 52  # Number of white keys (columns)
+        self.ROWS = 2  # 0: Natural, 1: Accidental
         self.LOOKAHEAD = 10
         self.render_mode = render_mode
         
-        # --- Action Space ---
+        # --- Action Space (fingering only, no hand position) ---
         self.action_space = spaces.Dict({
-            "hand_position": spaces.Discrete(self.PITCH_RANGE),
-            "fingers": spaces.MultiBinary(5),
-            "fingers_black": spaces.MultiBinary(5)
+            "fingers": spaces.MultiBinary(5),        # Which fingers to press
+            "fingers_black": spaces.MultiBinary(5)   # Black key modifier per finger
         })
 
         # --- Observation Space ---
@@ -36,17 +42,19 @@ class PianoEnv(gym.Env):
 
         # State
         self._current_step = 0
-        self._hand_pos = 0 # Current anchor
+        self._hand_pos = 0  # Current hand anchor position
         self._episode_count = -1 
         self._last_action = None
+        self._derived_hand_pos = 0  # Hand position derived from current action
         
         # Helper Modules
         self.renderer = PianoRenderer(self.PITCH_RANGE, self.LOOKAHEAD, self.render_mode)
         self.score_generator = MajorScaleGenerator(self.PITCH_RANGE)
         self.reward_function = RewardMixing()
         self.reward_function.add(MovementPenalty())
-        self.reward_function.add(BlackKeyChangePenalty())
+        self.reward_function.add(KeyChangePenalty())
         self.reward_function.add(WrongColorPenalty())
+        self.reward_function.add(FingerRepetitionPenalty())
         self.reward_function.add(AccuracyReward())
         self.reward_function.add(CompletionReward(bonus=50.0))
 
@@ -55,42 +63,76 @@ class PianoEnv(gym.Env):
         self._episode_count += 1
         
         self._current_step = 0
-        self._hand_pos = self.np_random.integers(0, self.PITCH_RANGE - 5) 
         self._last_action = None
         
         self._score_targets = self.score_generator.generate(self.np_random)
         
+        # Initialize hand position based on first target
+        if self._score_targets:
+            first_note, _ = self._score_targets[0]
+            self._hand_pos = first_note  # Start with hand at first note
+        else:
+            self._hand_pos = self.PITCH_RANGE // 2
+        
+        self._derived_hand_pos = self._hand_pos
+        
         return self._get_obs(), {}
 
+    def _compute_hand_position(self, action):
+        """
+        Derive hand position from fingering action.
+        
+        Rule: Leftmost pressed finger aligns with leftmost target note.
+        """
+        fingers = action["fingers"]
+        pressed_indices = [i for i, f in enumerate(fingers) if f == 1]
+        
+        if not pressed_indices:
+            # No fingers pressed - no change
+            return self._hand_pos
+        
+        leftmost_finger = min(pressed_indices)
+        
+        # Get current target note
+        if self._current_step < len(self._score_targets):
+            target_note, _ = self._score_targets[self._current_step]
+            # Place hand so leftmost finger hits target note
+            return target_note - leftmost_finger
+        
+        return self._hand_pos
+
     def step(self, action):
-        target_hand_pos = action["hand_position"]
+        # Compute derived hand position from fingering
+        self._derived_hand_pos = self._compute_hand_position(action)
         
-        # Logic delegated to RewardMixing
-        # Note: We pass raw action. Reward calc uses self._hand_pos (current) and self._last_action (prev)
-        # But we must NOT update self._hand_pos until AFTER reward calc 
-        # (because Penalty uses distance from current to target)
+        # Create augmented action with derived hand position for reward calculation
+        augmented_action = {
+            "hand_position": self._derived_hand_pos,
+            "fingers": action["fingers"],
+            "fingers_black": action["fingers_black"]
+        }
         
-        total_reward, success = self.reward_function.calculate(self, action)
+        # Calculate rewards using the derived hand position
+        total_reward, success = self.reward_function.calculate(self, augmented_action)
         
         terminated = False
         truncated = False
         
         if self._current_step < len(self._score_targets):
-             if success:
-                 # Logic for success (correct note played)
-                 self._current_step += 1
-                 if self._current_step >= len(self._score_targets):
-                      terminated = True
-             else:
-                 # Logic for failure (wrong note or invalid)
-                 # In this env, !success means failure if step < len
-                 terminated = True
+            if success:
+                # Correct note played
+                self._current_step += 1
+                if self._current_step >= len(self._score_targets):
+                    terminated = True
+            else:
+                # Wrong note - terminate
+                terminated = True
         else:
             terminated = True 
 
-        # Update State
-        self._hand_pos = target_hand_pos
-        self._last_action = action
+        # Update state with derived hand position
+        self._hand_pos = self._derived_hand_pos
+        self._last_action = augmented_action  # Store augmented for next step's rewards
         
         if self.render_mode == "human":
             self.render()
@@ -109,9 +151,9 @@ class PianoEnv(gym.Env):
                 # Determine Row (Natural/Accidental)
                 if 0 <= note < self.PITCH_RANGE:
                     if is_black:
-                        grid[1, note, t] = 1.0 # Accidental Row
+                        grid[1, note, t] = 1.0  # Accidental Row
                     else:
-                        grid[0, note, t] = 1.0 # Natural Row
+                        grid[0, note, t] = 1.0  # Natural Row
         
         # Compute relative target position
         if self._current_step < len(self._score_targets):

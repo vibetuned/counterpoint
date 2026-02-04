@@ -17,6 +17,7 @@ from counterpoint.policies import (
     SimpleBaselinePolicy, SimpleBaselineValue,
     ConvPolicy, ConvValue,
     TransformerPolicy, TransformerValue,
+    DecoderPolicy, DecoderValue,
 )
 
 # Policy registry
@@ -24,6 +25,7 @@ POLICY_REGISTRY = {
     "simple": (SimpleBaselinePolicy, SimpleBaselineValue),
     "conv": (ConvPolicy, ConvValue),
     "transformer": (TransformerPolicy, TransformerValue),
+    "decoder": (DecoderPolicy, DecoderValue),
 }
 
 def get_models(policy_type, observation_space, action_space, device):

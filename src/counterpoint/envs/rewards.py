@@ -19,9 +19,10 @@ class MovementPenalty(RewardComponent):
         elif dist == 1:
             return -1.0
         else:
-            return -(1.0 + (dist - 1.0) / 6.0)
+            #return -(1.0 + (dist - 1.0) / 6.0)
+            return -dist * 10
 
-class BlackKeyChangePenalty(RewardComponent):
+class KeyChangePenalty(RewardComponent):
     def calculate(self, env, action, **kwargs):
         # Allow free setup for the first step
         if env._current_step == 0:
@@ -33,8 +34,8 @@ class BlackKeyChangePenalty(RewardComponent):
         else:
              prev_blacks = np.zeros(5, dtype=int)
              
-        changed_count = np.sum(np.abs(np.array(fingers_black) - np.array(prev_blacks)))
-        return -(changed_count * 0.2)
+        changed_count = np.sum(np.bitwise_xor(fingers_black, prev_blacks))
+        return -(changed_count * 2)
 
 class WrongColorPenalty(RewardComponent):
     """Penalize pressing wrong color key for current target."""
@@ -52,6 +53,47 @@ class WrongColorPenalty(RewardComponent):
                 is_black_pressed = fingers_black[i] == 1
                 if is_black_pressed != bool(target_is_black):
                     penalty -= 2.0  # Each wrong-color finger: -2
+        return penalty
+
+
+class FingerRepetitionPenalty(RewardComponent):
+    """
+    Penalize using the same finger twice in a row when the note changes.
+    
+    This encourages proper finger alternation which is essential for
+    good piano technique.
+    """
+    def __init__(self, penalty: float = -2.0):
+        self.penalty = penalty
+    
+    def calculate(self, env, action, **kwargs):
+        # Skip first step - no previous note to compare
+        if env._current_step == 0 or env._last_action is None:
+            return 0.0
+        
+        # Get current and previous notes
+        if env._current_step >= len(env._score_targets):
+            return 0.0
+        if env._current_step - 1 < 0:
+            return 0.0
+            
+        current_note, _ = env._score_targets[env._current_step]
+        prev_note, _ = env._score_targets[env._current_step - 1]
+        
+        # If same note, no penalty for same finger
+        if current_note == prev_note:
+            return 0.0
+        
+        # Check if any finger is repeated
+        current_fingers = action["fingers"]
+        prev_fingers = env._last_action["fingers"]
+        
+        penalty = 0.0
+        for i in range(5):
+            if current_fingers[i] == 1 and prev_fingers[i] == 1:
+                # Same finger used for different notes
+                penalty += self.penalty
+        
         return penalty
 
 

@@ -5,6 +5,7 @@ class RewardComponent:
         raise NotImplementedError
 
 class MovementPenalty(RewardComponent):
+    """Penalize large hand movements with sublinear scaling."""
     def calculate(self, env, action, **kwargs):
         target_hand_pos = action["hand_position"]
         current_hand_pos = env._hand_pos
@@ -16,11 +17,12 @@ class MovementPenalty(RewardComponent):
             return 0.0
         elif dist == 0:
             return 0.0
-        elif dist == 1:
-            return -1.0
+        elif dist <= 2:
+            # Small movements are cheap
+            return -0.5 * dist
         else:
-            #return -(1.0 + (dist - 1.0) / 6.0)
-            return -dist * 10
+            # Sublinear scaling for larger movements (logarithmic growth)
+            return -1.0 - 0.5 * np.log(dist)
 
 class KeyChangePenalty(RewardComponent):
     def calculate(self, env, action, **kwargs):
@@ -98,6 +100,11 @@ class FingerRepetitionPenalty(RewardComponent):
 
 
 class AccuracyReward(RewardComponent):
+    """Reward correct note playing with asymmetric success/failure rewards."""
+    def __init__(self, success_reward: float = 5.0, failure_penalty: float = -1.0):
+        self.success_reward = success_reward
+        self.failure_penalty = failure_penalty
+    
     def calculate(self, env, action, **kwargs):
         if env._current_step >= len(env._score_targets):
              return 0.0
@@ -126,9 +133,77 @@ class AccuracyReward(RewardComponent):
                 false_note_played = True
         
         if correct_note_played and not false_note_played:
-            return 10.0, True # Success
+            return self.success_reward, True  # Success - larger positive
         else:
-            return -10.0, False # Failure (reduced from -100)
+            return self.failure_penalty, False  # Failure - smaller negative
+
+
+class ArpeggioReward(RewardComponent):
+    """
+    Reward proper finger patterns that enable smooth arpeggios.
+    
+    Encourages using adjacent fingers for adjacent notes (1-2-3-4-5 pattern)
+    rather than always using the same finger. This is essential for good
+    piano technique and enables faster, smoother playing.
+    """
+    def __init__(self, good_pattern_bonus: float = 2.0, variety_bonus: float = 1.0):
+        self.good_pattern_bonus = good_pattern_bonus
+        self.variety_bonus = variety_bonus
+    
+    def calculate(self, env, action, **kwargs):
+        # Skip first step - no previous finger to compare
+        if env._current_step == 0 or env._last_action is None:
+            return 0.0
+        
+        # Get current and previous active fingers
+        current_fingers = action["fingers"]
+        prev_fingers = env._last_action["fingers"]
+        
+        current_active = [i for i, f in enumerate(current_fingers) if f == 1]
+        prev_active = [i for i, f in enumerate(prev_fingers) if f == 1]
+        
+        if not current_active or not prev_active:
+            return 0.0
+        
+        # Use the primary (first pressed) finger for comparison
+        current_finger = current_active[0]
+        prev_finger = prev_active[0]
+        
+        reward = 0.0
+        
+        # Reward for using different fingers (variety)
+        if current_finger != prev_finger:
+            reward += self.variety_bonus
+            
+            # Extra bonus for adjacent finger pattern (proper arpeggio technique)
+            finger_distance = abs(current_finger - prev_finger)
+            if finger_distance == 1:
+                # Perfect! Using adjacent fingers (e.g., 1->2->3)
+                reward += self.good_pattern_bonus
+            elif finger_distance == 2:
+                # Acceptable skip (e.g., 1->3)
+                reward += self.good_pattern_bonus * 0.5
+        
+        return reward
+
+
+class NoteProgressReward(RewardComponent):
+    """
+    Small intermediate reward for successfully advancing to the next note.
+    
+    This provides a denser learning signal than just completion bonus,
+    helping the agent understand that progress is valuable.
+    """
+    def __init__(self, bonus: float = 0.5):
+        self.bonus = bonus
+        self._last_step = -1
+    
+    def calculate(self, env, action, **kwargs):
+        # Check if we advanced (this is called before step increment)
+        # We'll use a simple heuristic: reward is returned along with success
+        # So this component just adds a small bonus on success
+        # The actual logic is handled by RewardMixing based on success flag
+        return self.bonus  # Only added when accuracy check passes
 
 
 class CompletionReward(RewardComponent):
@@ -148,11 +223,11 @@ class CompletionReward(RewardComponent):
 class RewardMixing:
     def __init__(self):
         self.components = []
-        self.completion_components = []
+        self.success_components = []  # Components that only apply on success
         
     def add(self, component):
-        if isinstance(component, CompletionReward):
-            self.completion_components.append(component)
+        if isinstance(component, (CompletionReward, NoteProgressReward)):
+            self.success_components.append(component)
         else:
             self.components.append(component)
         
@@ -171,9 +246,10 @@ class RewardMixing:
             else:
                 total_reward += res
         
-        # Only add completion rewards if the step was successful
+        # Only add success-conditional rewards if the step was successful
         if success:
-            for comp in self.completion_components:
+            for comp in self.success_components:
                 total_reward += comp.calculate(env, action)
                 
         return total_reward, success
+

@@ -5,7 +5,11 @@ import matplotlib.pyplot as plt
 from gymnasium import spaces
 
 from counterpoint.envs.render.piano_render import PianoRenderer
-from counterpoint.envs.rewards import RewardMixing, MovementPenalty, WrongColorPenalty, AccuracyReward, CompletionReward, KeyChangePenalty, FingerRepetitionPenalty
+from counterpoint.envs.rewards import (
+    RewardMixing, MovementPenalty, WrongColorPenalty, AccuracyReward, 
+    CompletionReward, KeyChangePenalty, FingerRepetitionPenalty,
+    ArpeggioReward, NoteProgressReward
+)
 from counterpoint.envs.score_generators import MajorScaleGenerator
 
 
@@ -57,7 +61,9 @@ class PianoEnv(gym.Env):
         self.reward_function.add(KeyChangePenalty())
         self.reward_function.add(WrongColorPenalty())
         self.reward_function.add(FingerRepetitionPenalty())
+        self.reward_function.add(ArpeggioReward())  # Encourages finger variety
         self.reward_function.add(AccuracyReward())
+        self.reward_function.add(NoteProgressReward(bonus=1.0))  # Intermediate progress
         self.reward_function.add(CompletionReward(bonus=50.0))
 
     def reset(self, seed=None, options=None):

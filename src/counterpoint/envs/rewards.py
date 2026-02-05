@@ -140,19 +140,34 @@ class AccuracyReward(RewardComponent):
 
 class ArpeggioReward(RewardComponent):
     """
-    Reward proper finger patterns that enable smooth arpeggios.
+    Reward proper finger patterns that match melodic direction.
     
-    Encourages using adjacent fingers for adjacent notes (1-2-3-4-5 pattern)
-    rather than always using the same finger. This is essential for good
-    piano technique and enables faster, smoother playing.
+    Proper piano technique requires:
+    - Ascending notes → fingers should progress upward (1→2→3→4→5)
+    - Descending notes → fingers should progress downward (5→4→3→2→1)
+    
+    This prevents reward hacking with simple 2-finger alternation.
     """
-    def __init__(self, good_pattern_bonus: float = 2.0, variety_bonus: float = 1.0):
-        self.good_pattern_bonus = good_pattern_bonus
+    def __init__(self, direction_match_bonus: float = 2.0, variety_bonus: float = 0.5):
+        self.direction_match_bonus = direction_match_bonus
         self.variety_bonus = variety_bonus
     
     def calculate(self, env, action, **kwargs):
-        # Skip first step - no previous finger to compare
+        # Skip first step - no previous note/finger to compare
         if env._current_step == 0 or env._last_action is None:
+            return 0.0
+        
+        # Need at least 2 notes in score to compare
+        if env._current_step >= len(env._score_targets) or env._current_step < 1:
+            return 0.0
+        
+        # Get note direction
+        current_note, _ = env._score_targets[env._current_step]
+        prev_note, _ = env._score_targets[env._current_step - 1]
+        note_direction = current_note - prev_note  # positive = ascending
+        
+        # Same note - no arpeggio pattern expected
+        if note_direction == 0:
             return 0.0
         
         # Get current and previous active fingers
@@ -168,21 +183,30 @@ class ArpeggioReward(RewardComponent):
         # Use the primary (first pressed) finger for comparison
         current_finger = current_active[0]
         prev_finger = prev_active[0]
+        finger_direction = current_finger - prev_finger  # positive = higher finger
         
         reward = 0.0
         
-        # Reward for using different fingers (variety)
+        # Small reward for using different fingers (prevents single-finger spam)
         if current_finger != prev_finger:
             reward += self.variety_bonus
-            
-            # Extra bonus for adjacent finger pattern (proper arpeggio technique)
-            finger_distance = abs(current_finger - prev_finger)
+        
+        # Main reward: finger direction matches note direction
+        # Ascending notes should use ascending fingers, descending should use descending
+        directions_match = (note_direction > 0 and finger_direction > 0) or \
+                          (note_direction < 0 and finger_direction < 0)
+        
+        if directions_match:
+            finger_distance = abs(finger_direction)
             if finger_distance == 1:
-                # Perfect! Using adjacent fingers (e.g., 1->2->3)
-                reward += self.good_pattern_bonus
+                # Perfect! Adjacent finger in correct direction
+                reward += self.direction_match_bonus
             elif finger_distance == 2:
-                # Acceptable skip (e.g., 1->3)
-                reward += self.good_pattern_bonus * 0.5
+                # Acceptable skip in correct direction
+                reward += self.direction_match_bonus * 0.5
+            else:
+                # Large jump but still correct direction
+                reward += self.direction_match_bonus * 0.25
         
         return reward
 

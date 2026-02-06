@@ -95,20 +95,37 @@ def check_rnd(device):
         # Obs dim = 1048 (including mask)
         rnd = RNDNetwork(obs_dim=1048).to(device)
         
-        # Create dummy observation
-        batch_size = 4
-        obs = torch.randn(batch_size, 1048).to(device)
+        # Create dummy observation with REALISTIC magnitudes
+        # Hand pos (index 1046) ~ 40-50
+        # Relative target (index 1047) ~ -20 to 20
+        # Grid (index 6-1045) ~ 0 or 1
+        batch_size = 1
+        obs = torch.zeros(batch_size, 1048).to(device)
+        obs[:, 6:1046] = torch.randint(0, 2, (batch_size, 1040)).float() # Grid
+        obs[:, 1046] = 50.0 # Hand state
+        obs[:, 1047] = 10.0 # Relative target
+        
+        # 0-5 mask (randomly set)
+        obs[:, :5] = 0.0
+        obs[:, 5] = 1.0 # num notes
         
         # Forward pass
         target, predictor = rnd(obs)
         print("RND Forward Pass OK")
         print("Target Shape:", target.shape)
+        print("Target Mean:", target.mean().item(), "Std:", target.std().item())
+        print("Predictor Mean:", predictor.mean().item(), "Std:", predictor.std().item())
         
         # Intrinsic reward
         rewards = rnd.intrinsic_reward(obs)
         print("RND Intrinsic Reward Shape:", rewards.shape)
-        print("RND Intrinsic Reward OK")
+        print("RND Intrinsic Reward Values:", rewards)
         
+        if torch.isnan(rewards).any() or torch.isinf(rewards).any():
+             print("RND Output contains NaN or Inf!")
+        else:
+             print("RND Intrinsic Reward Values OK (Finite)")
+             
     except Exception as e:
         print(f"RND Check Failed: {e}")
         import traceback

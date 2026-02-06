@@ -87,7 +87,8 @@ class RNDNetwork(nn.Module):
         if normalize:
             # Update running statistics
             batch_mean = rewards.mean().item()
-            batch_std = rewards.std().item() + 1e-8
+            # Use unbiased=False to avoid NaN when batch_size=1
+            batch_std = rewards.std(unbiased=False).item() + 1e-8
             
             self.reward_count += 1
             alpha = 1.0 / self.reward_count

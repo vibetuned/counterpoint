@@ -148,7 +148,7 @@ class ArpeggioReward(RewardComponent):
     
     This prevents reward hacking with simple 2-finger alternation.
     """
-    def __init__(self, direction_match_bonus: float = 2.0, variety_bonus: float = 0.5):
+    def __init__(self, direction_match_bonus: float = 2.0, variety_bonus: float = 2.0):
         self.direction_match_bonus = direction_match_bonus
         self.variety_bonus = variety_bonus
     

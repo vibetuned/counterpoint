@@ -14,14 +14,16 @@ class RNDNetwork(nn.Module):
     Reference: Burda et al. "Exploration by Random Network Distillation" (2018)
     """
     
-    def __init__(self, obs_dim: int = 1042, hidden_dim: int = 256, output_dim: int = 64):
+    def __init__(self, obs_dim: int = 1048, hidden_dim: int = 256, output_dim: int = 64):
         super().__init__()
         
         self.obs_dim = obs_dim
+        self.mask_size = 6
+        self.feature_dim = obs_dim - self.mask_size
         
         # Fixed random target network (not trained)
         self.target = nn.Sequential(
-            nn.Linear(obs_dim, hidden_dim),
+            nn.Linear(self.feature_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
@@ -34,7 +36,7 @@ class RNDNetwork(nn.Module):
         
         # Trainable predictor network
         self.predictor = nn.Sequential(
-            nn.Linear(obs_dim, hidden_dim),
+            nn.Linear(self.feature_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
@@ -56,9 +58,14 @@ class RNDNetwork(nn.Module):
         Returns:
             (target_features, predictor_features)
         """
+        # Slice off action mask (first 6 elements)
+        # RND should only see state features (grid + hand_state + relative_target)
+        # obs shape is 1048, we want last 1042
+        features = obs[:, 6:]
+        
         with torch.no_grad():
-            target_features = self.target(obs)
-        predictor_features = self.predictor(obs)
+            target_features = self.target(features)
+        predictor_features = self.predictor(features)
         return target_features, predictor_features
     
     def intrinsic_reward(self, obs: torch.Tensor, normalize: bool = True) -> torch.Tensor:

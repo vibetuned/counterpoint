@@ -33,15 +33,34 @@ class DemonstrationGenerator:
         
         # Compute relative target
         if step < len(score_targets):
-            target_note, _ = score_targets[step]
+            target_note, is_black = score_targets[step]
             relative_target = float(target_note - hand_pos)
+            
+            # Action mask generation (mimics PianoEnv)
+            # num_notes calculation (count of notes at t=0 in grid)
+            num_notes = 1.0 # Scale demos are single note
+            
+            # fingers_black_mask
+            if is_black:
+                fingers_black_mask = np.ones(5, dtype=np.float32)
+            else:
+                fingers_black_mask = np.zeros(5, dtype=np.float32)
+                
         else:
             relative_target = 0.0
+            num_notes = 1.0
+            fingers_black_mask = np.zeros(5, dtype=np.float32)
+            
+        action_mask = np.concatenate([
+            fingers_black_mask,
+            np.array([num_notes], dtype=np.float32)
+        ])
         
         return {
             "grid": grid,
             "hand_state": np.array([hand_pos], dtype=np.float32),
-            "relative_target": np.array([relative_target], dtype=np.float32)
+            "relative_target": np.array([relative_target], dtype=np.float32),
+            "action_mask": action_mask
         }
     
     def _finger_to_action(self, finger: int, is_black: bool) -> np.ndarray:
@@ -133,7 +152,7 @@ class DemonstrationGenerator:
             batched arrays and actions_array is shape (batch, 10)
         """
         # Collect samples
-        all_obs = {"grid": [], "hand_state": [], "relative_target": []}
+        all_obs = {"grid": [], "hand_state": [], "relative_target": [], "action_mask": []}
         all_actions = []
         
         while len(all_actions) < batch_size:
@@ -146,6 +165,7 @@ class DemonstrationGenerator:
                 all_obs["grid"].append(obs["grid"])
                 all_obs["hand_state"].append(obs["hand_state"])
                 all_obs["relative_target"].append(obs["relative_target"])
+                all_obs["action_mask"].append(obs["action_mask"])
                 all_actions.append(action)
                 
                 if len(all_actions) >= batch_size:
@@ -155,16 +175,24 @@ class DemonstrationGenerator:
         batched_obs = {
             "grid": np.stack(all_obs["grid"][:batch_size]),
             "hand_state": np.stack(all_obs["hand_state"][:batch_size]),
-            "relative_target": np.stack(all_obs["relative_target"][:batch_size])
+            "relative_target": np.stack(all_obs["relative_target"][:batch_size]),
+            "action_mask": np.stack(all_obs["action_mask"][:batch_size])
         }
         batched_actions = np.stack(all_actions[:batch_size])
         
         return batched_obs, batched_actions
     
     def flatten_observation(self, obs: dict) -> np.ndarray:
-        """Flatten observation dict to match SKRL format."""
+        """Flatten observation dict to match SKRL format (alphabetical: action_mask, grid, hand, relative)."""
         grid_flat = obs["grid"].flatten()
-        return np.concatenate([grid_flat, obs["hand_state"], obs["relative_target"]])
+        
+        # Order: [action_mask(6), grid(1040), hand_state(1), relative_target(1)]
+        return np.concatenate([
+            obs["action_mask"],
+            grid_flat, 
+            obs["hand_state"], 
+            obs["relative_target"]
+        ])
     
     def sample_batch_flat(self, batch_size: int = 64) -> Tuple[np.ndarray, np.ndarray]:
         """
@@ -182,7 +210,8 @@ class DemonstrationGenerator:
             obs = {
                 "grid": obs_dict["grid"][i],
                 "hand_state": obs_dict["hand_state"][i],
-                "relative_target": obs_dict["relative_target"][i]
+                "relative_target": obs_dict["relative_target"][i],
+                "action_mask": obs_dict["action_mask"][i]
             }
             batch_obs.append(self.flatten_observation(obs))
         

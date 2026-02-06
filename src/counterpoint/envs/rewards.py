@@ -250,7 +250,8 @@ class RewardMixing:
         self.success_components = []  # Components that only apply on success
         
     def add(self, component):
-        if isinstance(component, (CompletionReward, NoteProgressReward)):
+        # These rewards only apply when the agent successfully plays the correct note
+        if isinstance(component, (CompletionReward, NoteProgressReward, ArpeggioReward)):
             self.success_components.append(component)
         else:
             self.components.append(component)

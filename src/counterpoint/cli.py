@@ -45,13 +45,24 @@ def verify_env(render: bool = False):
 @app.command()
 def train(
     steps: int = typer.Option(100000, help="Number of training steps"),
-    resume: str = typer.Option(None, help="Path to checkpoint file to resume from")
+    resume: str = typer.Option(None, help="Path to checkpoint file to resume from"),
+    use_bc: bool = typer.Option(None, help="Enable Behavior Cloning (overrides config)"),
+    use_rnd: bool = typer.Option(None, help="Enable RND exploration (overrides config)"),
+    bc_coef: float = typer.Option(None, help="BC loss coefficient (overrides config)"),
+    rnd_coef: float = typer.Option(None, help="RND reward coefficient (overrides config)"),
 ):
     """
-    Run SKRL PPO training.
+    Run SKRL PPO training with optional BC and RND exploration.
     """
     from counterpoint.train import train as train_loop
-    train_loop(steps=steps, resume_path=resume)
+    train_loop(
+        steps=steps, 
+        resume_path=resume,
+        use_bc=use_bc,
+        use_rnd=use_rnd,
+        bc_coef=bc_coef,
+        rnd_coef=rnd_coef
+    )
 
 @app.command()
 def test(checkpoint: str = typer.Option(None, help="Path to checkpoint file")):

@@ -10,7 +10,7 @@ from counterpoint.envs.rewards import (
     CompletionReward, KeyChangePenalty, FingerRepetitionPenalty,
     ArpeggioReward, NoteProgressReward
 )
-from counterpoint.envs.score_generators import MajorScaleGenerator
+from counterpoint.data.scores import MajorScaleGenerator
 
 
 class PianoEnv(gym.Env):

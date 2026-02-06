@@ -1,8 +1,6 @@
-"""Score generators for piano training environments."""
 
 import numpy as np
 from typing import List, Tuple
-
 
 # Major scale intervals in semitones: W-W-H-W-W-W-H
 # But in our grid, columns are white keys (C, D, E, F, G, A, B)
@@ -59,6 +57,33 @@ MAJOR_SCALES = {
 SCALE_ROOTS = {
     "C": 0, "D": 1, "E": 2, "F": 3, "G": 4, "A": 5, "B": 6,
     "Bb": 6, "Eb": 2, "Ab": 5, "Db": 1, "Gb": 4,
+}
+
+# Classical 2-octave fingerings for major scales
+# Fingers: 1=thumb, 2=index, 3=middle, 4=ring, 5=pinky
+# RH = Right Hand (ascending), LH = Left Hand (ascending)
+# These are the standard fingerings taught in classical piano
+SCALE_FINGERINGS = {
+    # White key scales - standard pattern
+    "C":  {"RH": [1,2,3,1,2,3,4,1,2,3,1,2,3,4,5], "LH": [5,4,3,2,1,3,2,1,4,3,2,1,3,2,1]},
+    "G":  {"RH": [1,2,3,1,2,3,4,1,2,3,1,2,3,4,5], "LH": [5,4,3,2,1,3,2,1,4,3,2,1,3,2,1]},
+    "D":  {"RH": [1,2,3,1,2,3,4,1,2,3,1,2,3,4,5], "LH": [5,4,3,2,1,3,2,1,4,3,2,1,3,2,1]},
+    "A":  {"RH": [1,2,3,1,2,3,4,1,2,3,1,2,3,4,5], "LH": [5,4,3,2,1,3,2,1,4,3,2,1,3,2,1]},
+    "E":  {"RH": [1,2,3,1,2,3,4,1,2,3,1,2,3,4,5], "LH": [5,4,3,2,1,3,2,1,4,3,2,1,3,2,1]},
+    # B major - different LH pattern
+    "B":  {"RH": [1,2,3,1,2,3,4,1,2,3,1,2,3,4,5], "LH": [4,3,2,1,4,3,2,1,3,2,1,4,3,2,1]},
+    # F# / Gb - starts on black key
+    "Gb": {"RH": [2,3,4,1,2,3,1,2,3,4,1,2,3,1,2], "LH": [4,3,2,1,3,2,1,4,3,2,1,3,2,1,4]},
+    # F major - thumb crosses to 4th
+    "F":  {"RH": [1,2,3,4,1,2,3,1,2,3,4,1,2,3,4], "LH": [5,4,3,2,1,3,2,1,4,3,2,1,3,2,1]},
+    # Bb major - starts with 2
+    "Bb": {"RH": [2,1,2,3,1,2,3,4,1,2,3,1,2,3,4], "LH": [3,2,1,4,3,2,1,3,2,1,4,3,2,1,3]},
+    # Eb major - starts with 3
+    "Eb": {"RH": [3,1,2,3,4,1,2,3,1,2,3,4,1,2,3], "LH": [3,2,1,4,3,2,1,3,2,1,4,3,2,1,3]},
+    # Ab major - starts with 3-4
+    "Ab": {"RH": [3,4,1,2,3,1,2,3,4,1,2,3,1,2,3], "LH": [3,2,1,4,3,2,1,3,2,1,4,3,2,1,3]},
+    # Db major - starts with 2-3
+    "Db": {"RH": [2,3,1,2,3,4,1,2,3,1,2,3,4,1,2], "LH": [3,2,1,4,3,2,1,3,2,1,4,3,2,1,3]},
 }
 
 

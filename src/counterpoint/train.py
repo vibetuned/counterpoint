@@ -43,7 +43,7 @@ def load_config(path="conf/base.yaml"):
     with open(path, "r") as f:
         return yaml.safe_load(f)
 
-def train(steps=None, resume_path=None):
+def train(steps=None, resume_path=None, use_bc=None, use_rnd=None, bc_coef=None, rnd_coef=None):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
 
@@ -60,6 +60,15 @@ def train(steps=None, resume_path=None):
     if steps is not None:
         print(f"Overriding timesteps: {current_timesteps} -> {steps}")
         config["training"]["timesteps"] = steps
+    
+    # Get exploration config with CLI overrides
+    exp_config = config.get("exploration", {})
+    final_use_bc = use_bc if use_bc is not None else exp_config.get("use_bc", False)
+    final_use_rnd = use_rnd if use_rnd is not None else exp_config.get("use_rnd", False)
+    final_bc_coef = bc_coef if bc_coef is not None else exp_config.get("bc_coefficient", 0.5)
+    final_rnd_coef = rnd_coef if rnd_coef is not None else exp_config.get("rnd_coefficient", 0.1)
+    
+    print(f"Exploration: BC={final_use_bc} (coef={final_bc_coef}), RND={final_use_rnd} (coef={final_rnd_coef})")
         
     # Load Env
     env_name = config["env"]["name"]
@@ -102,6 +111,21 @@ def train(steps=None, resume_path=None):
     
     # Timesteps
     cfg_agent["timesteps"] = config["training"]["timesteps"]
+    
+    # Initialize exploration manager if enabled
+    exploration_manager = None
+    if final_use_bc or final_use_rnd:
+        from counterpoint.exploration import ExplorationManager
+        exploration_manager = ExplorationManager(
+            use_bc=final_use_bc,
+            use_rnd=final_use_rnd,
+            bc_coefficient=final_bc_coef,
+            bc_decay_rate=exp_config.get("bc_decay_rate", 0.995),
+            bc_min_coefficient=exp_config.get("bc_min_coefficient", 0.05),
+            rnd_coefficient=final_rnd_coef,
+            obs_dim=1042,  # grid(2*52*10) + hand_state(1) + relative_target(1)
+            device=str(device)
+        )
 
     agent = PPO(models=models, 
                 memory=memory, 
@@ -115,12 +139,23 @@ def train(steps=None, resume_path=None):
         print(f"Resuming training from checkpoint: {resume_path}")
         agent.load(resume_path)
 
-    # Trainer
-    trainer = SequentialTrainer(cfg=cfg_agent, env=env, agents=agent)
-
-    # Train
+    # Select trainer based on exploration settings
+    if exploration_manager is not None:
+        print("Using ExplorationTrainer with BC/RND mechanisms...")
+        trainer = ExplorationTrainer(
+            cfg=cfg_agent, 
+            env=env, 
+            agents=agent,
+            exploration_manager=exploration_manager
+        )
+    else:
+        trainer = SequentialTrainer(cfg=cfg_agent, env=env, agents=agent)
+    
     print(f"Starting training for {cfg_agent['timesteps']} steps...")
     trainer.train()
+
+
+from counterpoint.exploration import ExplorationTrainer
 
 def test(path=None):
     import time

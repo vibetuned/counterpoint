@@ -10,7 +10,8 @@ from counterpoint.envs.rewards import (
     CompletionReward, KeyChangePenalty, FingerRepetitionPenalty,FingerNotRepetitionReward,
     ArpeggioReward, NoteProgressReward, ArpeggioReward2
 )
-from counterpoint.data.scores import MajorScaleGenerator
+from counterpoint.scores.scales import MajorScaleGenerator
+from counterpoint.scores.chords import ChordProgressionGenerator, ArpeggioGenerator
 
 
 class PianoEnv(gym.Env):
@@ -60,7 +61,7 @@ class PianoEnv(gym.Env):
         
         # Helper Modules
         self.renderer = PianoRenderer(self.PITCH_RANGE, self.LOOKAHEAD, self.render_mode)
-        self.score_generator = MajorScaleGenerator(self.PITCH_RANGE)
+        self.score_generator = ArpeggioGenerator(self.PITCH_RANGE, notes_per_beat=1)
         self.reward_function = RewardMixing()
         self.reward_function.add(MovementPenalty())
         #self.reward_function.add(KeyChangePenalty())
@@ -72,6 +73,28 @@ class PianoEnv(gym.Env):
         #self.reward_function.add(AccuracyReward())
         self.reward_function.add(NoteProgressReward(bonus=0.5))  # Intermediate progress
         #self.reward_function.add(CompletionReward(bonus=50.0))
+
+    def _get_target_notes(self, step: int):
+        """
+        Get target notes at a given step, handling both single notes and chords.
+        
+        Returns:
+            List of (column, is_black) tuples for the target(s) at this step.
+            For single notes: [(column, is_black)]
+            For chords: [(col1, is_black1), (col2, is_black2), ...]
+        """
+        if step >= len(self._score_targets):
+            return []
+        
+        target = self._score_targets[step]
+        
+        # Check if it's a chord (tuple of tuples) or single note (tuple of int, int)
+        if isinstance(target[0], tuple):
+            # Chord format: ((col1, is_black1), (col2, is_black2), ...)
+            return list(target)
+        else:
+            # Single note format: (column, is_black)
+            return [target]
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
@@ -86,8 +109,12 @@ class PianoEnv(gym.Env):
         
         # Initialize hand position based on first target
         if self._score_targets:
-            first_note, _ = self._score_targets[0]
-            self._hand_pos = first_note  # Start with hand at first note
+            first_notes = self._get_target_notes(0)
+            if first_notes:
+                first_note = first_notes[0][0]  # Get column of first note
+                self._hand_pos = first_note  # Start with hand at first note
+            else:
+                self._hand_pos = self.PITCH_RANGE // 2
         else:
             self._hand_pos = self.PITCH_RANGE // 2
         
@@ -110,11 +137,13 @@ class PianoEnv(gym.Env):
         
         leftmost_finger = min(pressed_indices)
         
-        # Get current target note
+        # Get current target note(s)
         if self._current_step < len(self._score_targets):
-            target_note, _ = self._score_targets[self._current_step]
-            # Place hand so leftmost finger hits target note
-            return target_note - leftmost_finger
+            target_notes = self._get_target_notes(self._current_step)
+            if target_notes:
+                target_note = target_notes[0][0]  # Leftmost note column
+                # Place hand so leftmost finger hits target note
+                return target_note - leftmost_finger
         
         return self._hand_pos
 
@@ -190,13 +219,21 @@ class PianoEnv(gym.Env):
         num_notes = max(1, min(5, num_notes))
         
         if self._current_step < len(self._score_targets):
-            target_note, target_is_black = self._score_targets[self._current_step]
+            target_notes = self._get_target_notes(self._current_step)
             
-            if target_is_black:
-                # Target is BLACK: force black keys
-                fingers_black_mask = np.ones(5, dtype=np.float32)
+            if target_notes:
+                # Check if any target note is black
+                any_black = any(is_black for _, is_black in target_notes)
+                target_note = target_notes[0][0]  # Leftmost note for comparison
+                
+                if any_black:
+                    # Target has BLACK keys: force black keys
+                    fingers_black_mask = np.ones(5, dtype=np.float32)
+                else:
+                    # Target is all WHITE: force white keys
+                    fingers_black_mask = np.zeros(5, dtype=np.float32)
             else:
-                # Target is WHITE: force white keys
+                target_note = None
                 fingers_black_mask = np.zeros(5, dtype=np.float32)
         else:
             target_note = None
@@ -209,7 +246,8 @@ class PianoEnv(gym.Env):
         if self._last_action is not None and target_note is not None:
             # Get previous note and finger
             if self._current_step > 0:
-                prev_note, _ = self._score_targets[self._current_step - 1]
+                prev_notes = self._get_target_notes(self._current_step - 1)
+                prev_note = prev_notes[0][0] if prev_notes else None
             else:
                 prev_note = None
             
@@ -235,19 +273,24 @@ class PianoEnv(gym.Env):
         for t in range(self.LOOKAHEAD):
             idx = self._current_step + t
             if idx < len(self._score_targets):
-                note, is_black = self._score_targets[idx]
+                target_notes = self._get_target_notes(idx)
                 
-                # Determine Row (Natural/Accidental)
-                if 0 <= note < self.PITCH_RANGE:
-                    if is_black:
-                        grid[1, note, t] = 1.0  # Accidental Row
-                    else:
-                        grid[0, note, t] = 1.0  # Natural Row
+                for note, is_black in target_notes:
+                    # Determine Row (Natural/Accidental)
+                    if 0 <= note < self.PITCH_RANGE:
+                        if is_black:
+                            grid[1, note, t] = 1.0  # Accidental Row
+                        else:
+                            grid[0, note, t] = 1.0  # Natural Row
         
-        # Compute relative target position
+        # Compute relative target position (use leftmost note of chord)
         if self._current_step < len(self._score_targets):
-            target_note, _ = self._score_targets[self._current_step]
-            relative_target = float(target_note - self._hand_pos)
+            target_notes = self._get_target_notes(self._current_step)
+            if target_notes:
+                target_note = target_notes[0][0]
+                relative_target = float(target_note - self._hand_pos)
+            else:
+                relative_target = 0.0
         else:
             relative_target = 0.0
         

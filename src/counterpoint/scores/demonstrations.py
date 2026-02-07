@@ -2,7 +2,7 @@
 import numpy as np
 from typing import List, Tuple
 
-from .scores import SCALE_FINGERINGS, MAJOR_SCALES, SCALE_ROOTS
+from .scales import SCALE_FINGERINGS, MAJOR_SCALES, SCALE_ROOTS
 
 class DemonstrationGenerator:
     """

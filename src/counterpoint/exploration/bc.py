@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Tuple
 
-from counterpoint.data.demonstrations import DemonstrationGenerator
+from counterpoint.scores.demonstrations import DemonstrationGenerator
 
 
 class BehaviorCloningLoss:

@@ -45,7 +45,13 @@ class WrongColorPenalty(RewardComponent):
         if env._current_step >= len(env._score_targets):
             return 0.0
         
-        target_note, target_is_black = env._score_targets[env._current_step]
+        target_notes = env._get_target_notes(env._current_step)
+        if not target_notes:
+            return 0.0
+        
+        # For chords, check if any note is black
+        target_is_black = any(is_black for _, is_black in target_notes)
+        
         fingers_pressed = action["fingers"]
         fingers_black = action["fingers_black"]
         
@@ -78,9 +84,14 @@ class FingerRepetitionPenalty(RewardComponent):
             return 0.0
         if env._current_step - 1 < 0:
             return 0.0
-            
-        current_note, _ = env._score_targets[env._current_step]
-        prev_note, _ = env._score_targets[env._current_step - 1]
+        
+        current_notes = env._get_target_notes(env._current_step)
+        prev_notes = env._get_target_notes(env._current_step - 1)
+        if not current_notes or not prev_notes:
+            return 0.0
+        
+        current_note = current_notes[0][0]
+        prev_note = prev_notes[0][0]
         
         # If same note, no penalty for same finger
         if current_note == prev_note:
@@ -118,9 +129,14 @@ class FingerNotRepetitionReward(RewardComponent):
             return 0.0
         if env._current_step - 1 < 0:
             return 0.0
-            
-        current_note, _ = env._score_targets[env._current_step]
-        prev_note, _ = env._score_targets[env._current_step - 1]
+        
+        current_notes = env._get_target_notes(env._current_step)
+        prev_notes = env._get_target_notes(env._current_step - 1)
+        if not current_notes or not prev_notes:
+            return 0.0
+        
+        current_note = current_notes[0][0]
+        prev_note = prev_notes[0][0]
         
         # If same note, no penalty for same finger
         if current_note == prev_note:
@@ -141,8 +157,13 @@ class AccuracyReward(RewardComponent):
     def calculate(self, env, action, **kwargs):
         if env._current_step >= len(env._score_targets):
              return 0.0
-             
-        target_note, target_is_black = env._score_targets[env._current_step]
+        
+        target_notes = env._get_target_notes(env._current_step)
+        if not target_notes:
+            return 0.0
+        
+        target_note = target_notes[0][0]
+        target_is_black = any(is_black for _, is_black in target_notes)
         
         fingers_pressed = action["fingers"]
         fingers_black = action["fingers_black"]
@@ -195,8 +216,13 @@ class ArpeggioReward(RewardComponent):
             return 0.0
         
         # Get note direction
-        current_note, _ = env._score_targets[env._current_step]
-        prev_note, _ = env._score_targets[env._current_step - 1]
+        current_notes = env._get_target_notes(env._current_step)
+        prev_notes = env._get_target_notes(env._current_step - 1)
+        if not current_notes or not prev_notes:
+            return 0.0
+        
+        current_note = current_notes[0][0]
+        prev_note = prev_notes[0][0]
         note_direction = current_note - prev_note  # positive = ascending
         
         # Same note - no arpeggio pattern expected
@@ -267,8 +293,13 @@ class ArpeggioReward2(RewardComponent):
             return 0.0
         
         # Get note direction
-        current_note, _ = env._score_targets[env._current_step]
-        prev_note, _ = env._score_targets[env._current_step - 1]
+        current_notes = env._get_target_notes(env._current_step)
+        prev_notes = env._get_target_notes(env._current_step - 1)
+        if not current_notes or not prev_notes:
+            return 0.0
+        
+        current_note = current_notes[0][0]
+        prev_note = prev_notes[0][0]
         note_direction = current_note - prev_note  # positive = ascending
         
         # Same note - no arpeggio pattern expected

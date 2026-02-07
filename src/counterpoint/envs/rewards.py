@@ -19,10 +19,10 @@ class MovementPenalty(RewardComponent):
             return 0.0
         elif dist <= 2:
             # Small movements are cheap
-            return -1.5 * dist
+            return -2.0 * dist
         else:
             # Sublinear scaling for larger movements (logarithmic growth)
-            return -1.0 - 0.5 * np.log(dist)
+            return -2.0 - 0.5 * np.log(dist)
 
 class KeyChangePenalty(RewardComponent):
     def calculate(self, env, action, **kwargs):

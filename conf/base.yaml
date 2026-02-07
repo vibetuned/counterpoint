@@ -33,7 +33,7 @@ policy:
 # Exploration mechanisms
 exploration:
   # Behavior Cloning from expert demonstrations
-  use_bc: false
+  use_bc: true
   bc_coefficient: 0.5         # Initial BC loss weight
   bc_decay_rate: 0.995        # Decay per epoch
   bc_min_coefficient: 0.05    # Minimum BC coefficient

@@ -65,9 +65,9 @@ class PianoEnv(gym.Env):
         self.reward_function.add(MovementPenalty())
         #self.reward_function.add(KeyChangePenalty())
         #self.reward_function.add(WrongColorPenalty())
-        self.reward_function.add(FingerRepetitionPenalty())
+        #self.reward_function.add(FingerRepetitionPenalty())
         self.reward_function.add(FingerNotRepetitionReward(reward=2.0))
-        self.reward_function.add(ArpeggioReward(10.0,5.0))  # Encourages finger variety
+        self.reward_function.add(ArpeggioReward(5.0,1.0))  # Encourages finger variety
         #self.reward_function.add(ArpeggioReward2(2.0,1.0))  # Encourages finger variety
         #self.reward_function.add(AccuracyReward())
         self.reward_function.add(NoteProgressReward(bonus=0.5))  # Intermediate progress

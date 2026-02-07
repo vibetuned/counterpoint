@@ -2,6 +2,9 @@ experiment:
   directory: "runs/piano_ppo"
   write_interval: 1000
   checkpoint_interval: 10000
+  tau_start: 10.0 # Initial Gumbel-Softmax temperature (exploration)
+  tau_end: 0.5   # Final Gumbel-Softmax temperature (exploitation)
+  tau_fraction: 0.5 # Fraction of training steps to anneal tau over
 
 # Training defaults
 training:
@@ -30,11 +33,11 @@ policy:
 # Exploration mechanisms
 exploration:
   # Behavior Cloning from expert demonstrations
-  use_bc: false
+  use_bc: true
   bc_coefficient: 0.5         # Initial BC loss weight
   bc_decay_rate: 0.995        # Decay per epoch
   bc_min_coefficient: 0.05    # Minimum BC coefficient
   
   # Random Network Distillation for intrinsic curiosity
-  use_rnd: true
+  use_rnd: false
   rnd_coefficient: 0.1        # Intrinsic reward weight

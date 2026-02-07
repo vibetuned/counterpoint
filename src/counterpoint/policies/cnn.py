@@ -46,6 +46,11 @@ class ConvPolicy(MaskedMultiCategoricalMixin, Model):
         
         # Action head
         self.action_head = nn.Linear(self.hidden_size, sum(action_space.nvec))
+        
+    def set_tau(self, tau):
+        """Update Gumbel-Softmax temperature."""
+        if hasattr(self, "priority_head"):
+            self.priority_head.set_tau(tau)
 
     def compute(self, inputs, role=""):
         x = inputs["states"]  # (batch, 1048)

@@ -19,6 +19,13 @@ class ExplorationTrainer(SequentialTrainer):
         self.exploration_manager = exploration_manager
         self._epoch = 0
         self._log_interval = 10  # Log stats every N epochs
+        
+        # Tau annealing params (defaults)
+        # We can try to read from cfg["experiment"] if available
+        exp_cfg = cfg.get("experiment", {}) if isinstance(cfg, dict) else {}
+        self.tau_start = exp_cfg.get("tau_start", 5.0)
+        self.tau_end = exp_cfg.get("tau_end", 0.5)
+        self.tau_fraction = exp_cfg.get("tau_fraction", 0.5)
     
     def train(self):
         """
@@ -87,6 +94,7 @@ class ExplorationTrainer(SequentialTrainer):
             if (timestep + 1) % rollouts == 0:
                 self._apply_bc_loss()
                 self._update_rnd()
+                self._update_tau(timestep, timesteps)
                 
                 # Decay BC coefficient
                 self.exploration_manager.decay_bc()
@@ -139,3 +147,34 @@ class ExplorationTrainer(SequentialTrainer):
                 self.exploration_manager.update_rnd(samples["states"])
         except Exception:
             pass  # Memory might not have enough samples yet
+            
+    def _update_tau(self, timestep, total_timesteps):
+        """Update Gumbel-Softmax temperature."""
+        # Check if policy supports set_tau
+        if not hasattr(self.agents, "policy") and not hasattr(self.agents, "models"):
+             return
+
+        # Handle annealing
+        # Progress: 0.0 -> 1.0
+        progress = timestep / total_timesteps
+        
+        if progress < self.tau_fraction:
+            # Linear decay
+            frac = progress / self.tau_fraction
+            current_tau = self.tau_start - frac * (self.tau_start - self.tau_end)
+        else:
+            current_tau = self.tau_end
+            
+        # Update policy
+        # SKRL PPO agent: policy is in self.agents.policy (if exposed) or self.agents.models["policy"]
+        policy = None
+        if hasattr(self.agents, "policy"):
+            policy = self.agents.policy
+        elif hasattr(self.agents, "models") and "policy" in self.agents.models:
+            policy = self.agents.models["policy"]
+            
+        if policy and hasattr(policy, "set_tau"):
+            policy.set_tau(current_tau)
+            # Log tau occasionally
+            if self._epoch % self._log_interval == 0:
+                self.agents.track_data("Exploration / Tau", current_tau)

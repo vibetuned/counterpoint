@@ -74,11 +74,20 @@ class MaskedMultiCategoricalMixin(MultiCategoricalMixin):
             # Or just set them to MASK_VALUE? 
             # SKRL mixin usually adds the mask? No, usually we just manipulate logits.
             
-            # If selected: allow ON, forbid OFF
-            final_mask[:, idx_off] = torch.where(selected > 0, torch.tensor(MASK_VALUE).to(logits.device), torch.tensor(0.0).to(logits.device))
+            # If selected (1): Mask OFF(0) -> add MASK_VALUE
+            # If not selected (0): Mask ON(1) -> add MASK_VALUE
             
-            # If NOT selected: allow OFF, forbid ON
-            final_mask[:, idx_on] = torch.where(selected == 0, torch.tensor(MASK_VALUE).to(logits.device), torch.tensor(0.0).to(logits.device))
+            # Differentiable masking:
+            # selected is effectively 0 or 1 (from Gumbel-Softmax hard=True)
+            # but gradients flow through it.
+            
+            # Mask OFF action if selected (force ON)
+            # Add MASK_VALUE if selected=1 (active)
+            final_mask[:, idx_off] = selected * MASK_VALUE
+            
+            # Mask ON action if NOT selected (force OFF)
+            # Add MASK_VALUE if selected=0 (inactive) (1-selected=1)
+            final_mask[:, idx_on] = (1 - selected) * MASK_VALUE
 
         # 2. Black Key Actions (Indices 10-19 in logits aka 5-9 in action space)
         # Driven by env_black_mask

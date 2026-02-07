@@ -37,7 +37,8 @@ class PianoRenderer:
             
         # --- Top: Grid State ---
         self.ax_grid.clear()
-        self.ax_grid.set_title(f"Score Lookahead | Episode: {env._episode_count} | Step: {env._current_step}")
+        total_reward = getattr(env, "_episode_reward", 0.0)
+        self.ax_grid.set_title(f"Score Lookahead | Episode: {env._episode_count} | Step: {env._current_step} | Total Reward: {total_reward:.2f}")
         self.ax_grid.set_xlim(0, self.pitch_range)
         self.ax_grid.set_ylim(0, self.lookahead)
         self.ax_grid.grid(True, which='major', axis='both', linestyle='--', alpha=0.5)

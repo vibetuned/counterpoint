@@ -13,8 +13,13 @@ class PriorityHead(nn.Module):
         self.net = nn.Sequential(
             nn.Linear(input_size, hidden_size),
             nn.ReLU(),
+            nn.LayerNorm(hidden_size), # Normalize features before final projection
             nn.Linear(hidden_size, 5) # Logits for 5 fingers
         )
+        self.tau = 5.0 # Temperature for Gumbel-Softmax (Default high for exploration)
+        
+    def set_tau(self, tau):
+        self.tau = tau
         
     def forward(self, features):
         """
@@ -39,42 +44,36 @@ class PriorityHead(nn.Module):
             finger_mask: (batch, 5) - 1 for selected finger(s), 0 for others
         """
         logits = self.forward(features)
-        probs = torch.softmax(logits, dim=-1)
         
         if training:
-            # Sample from categorical distribution
-            dist = torch.distributions.Categorical(probs)
-            # For multi-finger, we might want multiple samples without replacement
-            # But Categorical only gives one.
-            # If num_fingers > 1, we can use Gumbel-Softmax or iterative sampling
-            # For now, let's assume num_fingers is usually 1, or use Top-K for deterministic
-            
-            # Simple sampling for 1 finger:
             if num_fingers == 1:
-                indices = dist.sample() # (batch,)
-                mask = torch.zeros_like(logits)
-                mask.scatter_(1, indices.unsqueeze(1), 1.0)
+                # Use Gumbel-Softmax (Straight-Through) to allow gradient flow
+                # hard=True returns one-hot tensor, but gradients flow through softmax
+                mask = torch.nn.functional.gumbel_softmax(logits, tau=self.tau, hard=True)
             else:
-                # If we need multiple distinct fingers, sampling is trickier.
-                # A simple approximation: Take top-k samples or use TopK for now.
-                # Realistically, for chords, we want 'num_fingers' distinct fingers.
-                
-                # Let's stick to Top-K sampling for stability or just Top-K
-                # If training=True, maybe adds noise?
-                # For now, let's just use Top-K (deterministic given noise if added)
-                # To make it stochastic, we could add Gumbel noise to logits before Top-K
-                
-                # Gumbel-Max trick
+                # For >1 fingers, use Gumbel-TopK (stochastic top-k)
+                # Gumbel-Max trick for sampling without replacement
                 u = torch.rand_like(logits)
                 gumbel = -torch.log(-torch.log(u + 1e-9) + 1e-9)
                 perturbed_logits = logits + gumbel
+                
+                # We can't easily make this differentiable for TopK > 1 with ST-estimator
+                # without custom implementation. But for now, stochastic sampling is key.
+                # If we really need gradients here, we'd need a relaxed k-hot estimator.
+                # Assuming standard Gumbel-Max is okay for exploration even if gradients are broken?
+                # No, if gradients assume broken, it won't learn.
+                # But typically num_notes=1.
                 
                 _, indices = torch.topk(perturbed_logits, k=num_fingers, dim=-1)
                 mask = torch.zeros_like(logits)
                 mask.scatter_(1, indices, 1.0)
                 
+                # To maintain some gradient flow approximation could use soft top-k,
+                # but let's stick to hard sampling for now as num_fingers=1 is dominant.
+                
         else:
-            # Deterministic: Top-K
+            # Deterministic: Top-K (which matches argmax for k=1)
+            probs = torch.softmax(logits, dim=-1)
             _, indices = torch.topk(probs, k=num_fingers, dim=-1)
             mask = torch.zeros_like(logits)
             mask.scatter_(1, indices, 1.0)

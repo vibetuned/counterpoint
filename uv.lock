@@ -81,6 +81,7 @@ source = { editable = "." }
 dependencies = [
     { name = "gymnasium" },
     { name = "matplotlib" },
+    { name = "networkx" },
     { name = "numpy" },
     { name = "pyyaml" },
     { name = "skrl" },
@@ -99,6 +100,7 @@ dev = [
 requires-dist = [
     { name = "gymnasium", specifier = ">=1.2.3" },
     { name = "matplotlib", specifier = ">=3.10.8" },
+    { name = "networkx", specifier = ">=3.6.1" },
     { name = "numpy", specifier = ">=2.4.2" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "skrl", specifier = ">=1.4.3" },

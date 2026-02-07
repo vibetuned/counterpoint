@@ -72,5 +72,13 @@ def test(checkpoint: str = typer.Option(None, help="Path to checkpoint file")):
     from counterpoint.train import test as test_loop
     test_loop(path=checkpoint)
 
+@app.command()
+def linear(debug: bool = typer.Option(False, help="Enable debug visualization (save graphs)")):
+    """
+    Run the Linear Debugging Agent (Dijkstra) on the Piano environment.
+    """
+    from counterpoint.linear import run_linear_agent
+    run_linear_agent(debug=debug)
+
 if __name__ == "__main__":
     app()

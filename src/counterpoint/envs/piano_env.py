@@ -7,8 +7,8 @@ from gymnasium import spaces
 from counterpoint.envs.render.piano_render import PianoRenderer
 from counterpoint.envs.rewards import (
     RewardMixing, MovementPenalty, WrongColorPenalty, AccuracyReward, 
-    CompletionReward, KeyChangePenalty, FingerRepetitionPenalty,
-    ArpeggioReward, NoteProgressReward
+    CompletionReward, KeyChangePenalty, FingerRepetitionPenalty,FingerNotRepetitionReward,
+    ArpeggioReward, NoteProgressReward, ArpeggioReward2
 )
 from counterpoint.data.scores import MajorScaleGenerator
 
@@ -62,12 +62,14 @@ class PianoEnv(gym.Env):
         self.score_generator = MajorScaleGenerator(self.PITCH_RANGE)
         self.reward_function = RewardMixing()
         self.reward_function.add(MovementPenalty())
-        self.reward_function.add(KeyChangePenalty())
-        self.reward_function.add(WrongColorPenalty())
+        #self.reward_function.add(KeyChangePenalty())
+        #self.reward_function.add(WrongColorPenalty())
         self.reward_function.add(FingerRepetitionPenalty())
-        self.reward_function.add(ArpeggioReward())  # Encourages finger variety
-        self.reward_function.add(AccuracyReward())
-        #self.reward_function.add(NoteProgressReward(bonus=1.0))  # Intermediate progress
+        self.reward_function.add(FingerNotRepetitionReward(reward=2.0))
+        self.reward_function.add(ArpeggioReward(10.0,5.0))  # Encourages finger variety
+        self.reward_function.add(ArpeggioReward2(2.0,1.0))  # Encourages finger variety
+        #self.reward_function.add(AccuracyReward())
+        self.reward_function.add(NoteProgressReward(bonus=0.5))  # Intermediate progress
         #self.reward_function.add(CompletionReward(bonus=50.0))
 
     def reset(self, seed=None, options=None):
@@ -77,6 +79,7 @@ class PianoEnv(gym.Env):
         self._current_step = 0
         self._step_count = 0
         self._last_action = None
+        self._episode_reward = 0.0  # Track total reward for render
         
         self._score_targets = self.score_generator.generate(self.np_random)
         
@@ -129,6 +132,7 @@ class PianoEnv(gym.Env):
         
         # Calculate rewards using the derived hand position
         total_reward, success = self.reward_function.calculate(self, augmented_action)
+        self._episode_reward += total_reward
         
         terminated = False
         truncated = False

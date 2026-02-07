@@ -19,7 +19,7 @@ class MovementPenalty(RewardComponent):
             return 0.0
         elif dist <= 2:
             # Small movements are cheap
-            return -0.5 * dist
+            return -1.5 * dist
         else:
             # Sublinear scaling for larger movements (logarithmic growth)
             return -1.0 - 0.5 * np.log(dist)
@@ -98,6 +98,39 @@ class FingerRepetitionPenalty(RewardComponent):
         
         return penalty
 
+class FingerNotRepetitionReward(RewardComponent):
+    """
+    Reward using different fingers for different notes.
+    
+    This encourages proper finger alternation which is essential for
+    good piano technique.
+    """
+    def __init__(self, reward: float = 2.0):
+        self.reward = reward
+    
+    def calculate(self, env, action, **kwargs):
+        # Skip first step - no previous note to compare
+        if env._current_step == 0 or env._last_action is None:
+            return 0.0
+        
+        # Get current and previous notes
+        if env._current_step >= len(env._score_targets):
+            return 0.0
+        if env._current_step - 1 < 0:
+            return 0.0
+            
+        current_note, _ = env._score_targets[env._current_step]
+        prev_note, _ = env._score_targets[env._current_step - 1]
+        
+        # If same note, no penalty for same finger
+        if current_note == prev_note:
+            return 0.0
+        
+        # Check if any finger is repeated
+        current_fingers = action["fingers"]
+        prev_fingers = env._last_action["fingers"]
+        
+        return np.sum(np.bitwise_xor(current_fingers, prev_fingers)) * self.reward
 
 class AccuracyReward(RewardComponent):
     """Reward correct note playing with asymmetric success/failure rewards."""
@@ -210,6 +243,77 @@ class ArpeggioReward(RewardComponent):
         
         return reward
 
+class ArpeggioReward2(RewardComponent):
+    """
+    Reward proper finger patterns that match melodic direction.
+    
+    Proper piano technique requires:
+    - Ascending notes → fingers should progress upward (1→2→3→4→5)
+    - Descending notes → fingers should progress downward (5→4→3→2→1)
+    
+    This prevents reward hacking with simple 2-finger alternation.
+    """
+    def __init__(self, direction_match_bonus: float = 2.0, variety_bonus: float = 2.0):
+        self.direction_match_bonus = direction_match_bonus
+        self.variety_bonus = variety_bonus
+    
+    def calculate(self, env, action, **kwargs):
+        # Skip first step - no previous note/finger to compare
+        if env._current_step == 0 or env._last_action is None:
+            return 0.0
+        
+        # Need at least 2 notes in score to compare
+        if env._current_step >= len(env._score_targets) or env._current_step < 1:
+            return 0.0
+        
+        # Get note direction
+        current_note, _ = env._score_targets[env._current_step]
+        prev_note, _ = env._score_targets[env._current_step - 1]
+        note_direction = current_note - prev_note  # positive = ascending
+        
+        # Same note - no arpeggio pattern expected
+        if note_direction == 0:
+            return 0.0
+        
+        # Get current and previous active fingers
+        current_fingers = action["fingers"]
+        prev_fingers = env._last_action["fingers"]
+        
+        current_active = [i for i, f in enumerate(current_fingers) if f == 1]
+        prev_active = [i for i, f in enumerate(prev_fingers) if f == 1]
+        
+        if not current_active or not prev_active:
+            return 0.0
+        
+        # Use the primary (first pressed) finger for comparison
+        current_finger = current_active[0]
+        prev_finger = prev_active[0]
+        finger_direction = current_finger - prev_finger  # positive = higher finger
+        
+        reward = 0.0
+        
+        # Small reward for using different fingers (prevents single-finger spam)
+        if current_finger != prev_finger:
+            reward += self.variety_bonus
+        
+        # Main reward: finger direction matches note direction
+        # Ascending notes should use ascending fingers, descending should use descending
+        directions_match = (note_direction > 0 and finger_direction > 0) or \
+                          (note_direction < 0 and finger_direction < 0)
+        
+        if directions_match:
+            finger_distance = abs(finger_direction)
+            if finger_distance == 1:
+                # Perfect! Adjacent finger in correct direction
+                reward += self.direction_match_bonus
+            elif finger_distance == 2:
+                # Acceptable skip in correct direction
+                reward += self.direction_match_bonus * 0.5
+            else:
+                # Large jump but still correct direction
+                reward += self.direction_match_bonus * 0.25
+        
+        return reward
 
 class NoteProgressReward(RewardComponent):
     """
@@ -251,10 +355,11 @@ class RewardMixing:
         
     def add(self, component):
         # These rewards only apply when the agent successfully plays the correct note
-        if isinstance(component, (CompletionReward, NoteProgressReward, ArpeggioReward)):
-            self.success_components.append(component)
-        else:
-            self.components.append(component)
+        self.components.append(component)
+        #if isinstance(component, (CompletionReward, NoteProgressReward, ArpeggioReward)):
+        #    self.success_components.append(component)
+        #else:
+        #    self.components.append(component)
         
     def calculate(self, env, action):
         total_reward = 0.0
@@ -263,18 +368,18 @@ class RewardMixing:
         # Calculate standard rewards
         for comp in self.components:
             res = comp.calculate(env, action)
-            if isinstance(res, tuple):
-                rew, succ = res
-                total_reward += rew
-                if succ:
-                    success = True
-            else:
-                total_reward += res
+            #if isinstance(res, tuple):
+            #    rew, succ = res
+            #    total_reward += rew
+            #    if succ:
+            #        success = True
+            #else:
+            total_reward += res
         
         # Only add success-conditional rewards if the step was successful
-        if success:
-            for comp in self.success_components:
-                total_reward += comp.calculate(env, action)
+        #if success:
+        #    for comp in self.success_components:
+        #        total_reward += comp.calculate(env, action)
                 
-        return total_reward, success
+        return total_reward, True
 

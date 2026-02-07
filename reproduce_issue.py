@@ -131,8 +131,95 @@ def check_rnd(device):
         import traceback
         traceback.print_exc()
 
+def check_priority_head_grad(device):
+    print("\nChecking Priority Head Gradient Flow...")
+    try:
+        from counterpoint.policies.transformer import TransformerPolicy
+        from counterpoint.policies import FlattenActionWrapper
+        import gymnasium as gym
+        from skrl.envs.wrappers.torch import wrap_env
+        
+        # Setup env and policy
+        env = gym.make("Piano-v0")
+        env = FlattenActionWrapper(env)
+        env = wrap_env(env)
+        
+        policy = TransformerPolicy(env.observation_space, env.action_space, device)
+        policy.to(device)
+        policy.train()
+        
+        # Dummy Input
+        obs = torch.randn(2, 1048).to(device)
+        # Ensure num_notes=1 for Gumbel-Softmax path
+        obs[:, 5] = 1.0 
+        
+        # Forward
+        policy.optimizer = torch.optim.Adam(policy.parameters(), lr=1e-3)
+        policy.optimizer.zero_grad()
+        
+        outputs, _ = policy.compute({"states": obs})
+        
+        # Dummy Loss on outputs
+        # We must not sum everything, because sum(mask_off + mask_on) = M (constant).
+        # We sum only even indices (OFF actions).
+        # If selected=1, OFF is masked (M). Loss decreases.
+        # If selected=0, OFF is not masked (0). Loss increases.
+        loss = outputs[:, ::2].sum()
+        print(f"Loss: {loss.item()}")
+        loss.backward()
+        
+        # Check gradients
+        head_weight_grad = policy.priority_head.net[0].weight.grad
+        head_bias_grad = policy.priority_head.net[0].bias.grad
+        print(f"Head Weight Grad: {head_weight_grad}")
+        print(f"Head Bias Grad: {head_bias_grad}")
+        
+        if head_weight_grad is not None and head_weight_grad.abs().sum() > 0:
+            print("Priority Head Weight Gradient Flow OK")
+        elif head_bias_grad is not None and head_bias_grad.abs().sum() > 0:
+             print("Priority Head Bias Gradient Flow OK (Weights 0 -> Dead Neurons?)")
+        else:
+            print("Priority Head Gradients Missing or Zero!")
+            
+    except Exception as e:
+        print(f"Priority Head Gradient Check Failed: {e}")
+        import traceback
+        traceback.print_exc()
+
+def check_set_tau(device):
+    print("\nChecking Tau Update...")
+    try:
+        from counterpoint.policies.transformer import TransformerPolicy
+        from counterpoint.policies import FlattenActionWrapper
+        import gymnasium as gym
+        from skrl.envs.wrappers.torch import wrap_env
+        
+        # Setup env and policy
+        env = gym.make("Piano-v0")
+        env = FlattenActionWrapper(env)
+        env = wrap_env(env)
+        
+        policy = TransformerPolicy(env.observation_space, env.action_space, device)
+        policy.to(device)
+        
+        print(f"Initial Tau: {policy.priority_head.tau}")
+        policy.set_tau(0.5)
+        print(f"Updated Tau: {policy.priority_head.tau}")
+        
+        if policy.priority_head.tau == 0.5:
+            print("Tau Update OK")
+        else:
+            print("Tau Update Failed!")
+            
+    except Exception as e:
+        print(f"Tau Update Check Failed: {e}")
+        traceback.print_exc()
+
 if __name__ == "__main__":
     check_env_and_policies()
-    check_bc_generator()
+    #check_bc_generator()
+    #device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    #check_rnd(device)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    check_rnd(device)
+    check_priority_head_grad(device)
+    check_set_tau(device)

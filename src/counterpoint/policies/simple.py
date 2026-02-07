@@ -16,7 +16,7 @@ class SimpleBaselinePolicy(MaskedMultiCategoricalMixin, Model):
              # Fallback for Dict space or when shape is None (1048 total - 6 mask)
              self.feature_size = 1048 - 6
              
-        self.mask_size = 6 # fingers_black(5) + num_notes(1)
+        self.mask_size = 11 # fingers_black(5) + num_notes(1) + finger_mask(5)
 
         # Simple MLP
         self.net = nn.Sequential(
@@ -52,11 +52,14 @@ class SimpleBaselinePolicy(MaskedMultiCategoricalMixin, Model):
         shared_features = self.net(features)
         
         # Get finger mask from priority head using dynamic num_notes
+        # Pass env_finger_mask so priority head only samples from allowed fingers
         max_num_notes = max(1, int(num_notes.max().item()))
+        env_finger_mask = action_mask[:, 6:11]  # (batch, 5) - 1=allowed, 0=forbidden
         finger_mask, _ = self.priority_head.get_finger_mask(
             shared_features, 
             num_fingers=max_num_notes,
-            training=self.training
+            training=self.training,
+            env_finger_mask=env_finger_mask
         )
         
         # Get action logits
@@ -80,7 +83,7 @@ class SimpleBaselineValue(DeterministicMixin, Model):
         else:
              self.feature_size = 1048 - 6
              
-        self.mask_size = 6
+        self.mask_size = 11
         self.net = nn.Sequential(
             nn.Linear(self.feature_size, 512),
             nn.ReLU(),

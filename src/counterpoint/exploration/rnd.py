@@ -18,7 +18,7 @@ class RNDNetwork(nn.Module):
         super().__init__()
         
         self.obs_dim = obs_dim
-        self.mask_size = 6
+        self.mask_size = 11  # fingers_black(5) + num_notes(1) + finger_mask(5)
         self.feature_dim = obs_dim - self.mask_size
         
         # Fixed random target network (not trained)
@@ -58,10 +58,10 @@ class RNDNetwork(nn.Module):
         Returns:
             (target_features, predictor_features)
         """
-        # Slice off action mask (first 6 elements)
+        # Slice off action mask (first 11 elements)
         # RND should only see state features (grid + hand_state + relative_target)
-        # obs shape is 1048, we want last 1042
-        features = obs[:, 6:]
+        # obs shape is 1053, we want last 1042
+        features = obs[:, self.mask_size:]
         
         with torch.no_grad():
             target_features = self.target(features)

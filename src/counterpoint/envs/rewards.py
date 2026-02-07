@@ -327,6 +327,14 @@ class NoteProgressReward(RewardComponent):
         self._last_step = -1
     
     def calculate(self, env, action, **kwargs):
+        current_fingers = action["fingers"]
+        
+        current_active = [i for i, f in enumerate(current_fingers) if f == 1]
+
+        if len(current_active) < 1:
+            return -5.0
+
+        
         # Check if we advanced (this is called before step increment)
         # We'll use a simple heuristic: reward is returned along with success
         # So this component just adds a small bonus on success

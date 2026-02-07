@@ -8,13 +8,14 @@ class MaskedMultiCategoricalMixin(MultiCategoricalMixin):
     """
     MultiCategorical mixin with action masking and priority head support.
     
-    Expects action_mask in the last 6 positions of flattened observations.
-    Mask format: [fingers_black_mask(5), num_notes(1)]
+    Expects action_mask in the last 11 positions of flattened observations.
+    Mask format: [fingers_black_mask(5), num_notes(1), finger_mask(5)]
     
     Logic:
-    1. Priority Head selects which finger(s) to use (e.g., Index)
-    2. Env Mask tells us valid actions for that finger (e.g., White Key Only)
-    3. Final Mask = PriorityMask & EnvMask
+    1. Finger mask from env forbids certain fingers (e.g., previous finger)
+    2. Priority Head selects which finger(s) to use from allowed set
+    3. Env Mask tells us valid actions for that finger (e.g., White Key Only)
+    4. Final Mask = PriorityMask & EnvMask
     """
     def __init__(self, unnormalized_log_prob=True, reduction="sum"):
         super().__init__(unnormalized_log_prob, reduction)
@@ -25,7 +26,7 @@ class MaskedMultiCategoricalMixin(MultiCategoricalMixin):
         
         Args:
             logits: (batch, 20) - 2 logits per binary choice
-            action_mask: (batch, 6) - env mask [fingers_black_mask(5), num_notes(1)]
+            action_mask: (batch, 11) - env mask [fingers_black_mask(5), num_notes(1), finger_mask(5)]
             finger_mask: (batch, 5) - priority head mask (which fingers to use)
             
         Returns:
@@ -34,8 +35,10 @@ class MaskedMultiCategoricalMixin(MultiCategoricalMixin):
         # action_mask contains:
         # 0-4: fingers_black_mask (1 if black key is forced, 0 if white/flexible)
         # 5: num_notes (count of notes to play)
+        # 6-10: finger_mask (1 = finger allowed, 0 = finger forbidden by env)
         
         env_black_mask = action_mask[:, :5] # (batch, 5)
+        env_finger_mask = action_mask[:, 6:11]  # (batch, 5) - 1=allowed, 0=forbidden
         
         # We need to constructing a mask for the 20 logits (10 binary actions x 2 classes)
         # Actions: [F1_on/off, F2_on/off, ..., F5_on/off, B1_yes/no, ..., B5_yes/no]
@@ -55,24 +58,28 @@ class MaskedMultiCategoricalMixin(MultiCategoricalMixin):
         final_mask = torch.zeros_like(logits)
         
         # 1. Finger Open/Close Actions (Indices 0-9 in logits aka 0-4 in action space)
-        # Driven by PriorityHead (finger_mask)
+        # Driven by PriorityHead (finger_mask) AND env_finger_mask
+        # Combined mask: finger should be ON only if priority selects it AND env allows it
         # finger_mask[i] == 1 => Finger i MUST be ON (Action 1)
         # finger_mask[i] == 0 => Finger i MUST be OFF (Action 0)
+        # env_finger_mask[i] == 0 => Finger i is FORBIDDEN (override to OFF)
         
         for i in range(5):
             # Logit indices for Finger i
             idx_off = 2 * i
             idx_on = 2 * i + 1
             
-            # finger_mask[:, i] is 1 if selected, 0 if not
+            # finger_mask[:, i] is 1 if selected by priority head, 0 if not
             selected = finger_mask[:, i] # (batch,)
             
-            # If selected (1): Mask OFF(0) -> -inf
-            # If not selected (0): Mask ON(1) -> -inf
+            # env_finger_mask[:, i] is 1 if allowed by env, 0 if forbidden
+            env_allowed = env_finger_mask[:, i]  # (batch,)
             
-            # We want to subtract MASK_VALUE from invalid options? 
-            # Or just set them to MASK_VALUE? 
-            # SKRL mixin usually adds the mask? No, usually we just manipulate logits.
+            # If env forbids this finger (env_allowed=0), force it OFF regardless of priority
+            # If env allows (env_allowed=1), use priority head selection
+            
+            # Effective selection: selected AND env_allowed
+            effective_selected = selected * env_allowed
             
             # If selected (1): Mask OFF(0) -> add MASK_VALUE
             # If not selected (0): Mask ON(1) -> add MASK_VALUE
@@ -83,11 +90,11 @@ class MaskedMultiCategoricalMixin(MultiCategoricalMixin):
             
             # Mask OFF action if selected (force ON)
             # Add MASK_VALUE if selected=1 (active)
-            final_mask[:, idx_off] = selected * MASK_VALUE
+            final_mask[:, idx_off] = effective_selected * MASK_VALUE
             
             # Mask ON action if NOT selected (force OFF)
             # Add MASK_VALUE if selected=0 (inactive) (1-selected=1)
-            final_mask[:, idx_on] = (1 - selected) * MASK_VALUE
+            final_mask[:, idx_on] = (1 - effective_selected) * MASK_VALUE
 
         # 2. Black Key Actions (Indices 10-19 in logits aka 5-9 in action space)
         # Driven by env_black_mask
@@ -120,3 +127,4 @@ class MaskedMultiCategoricalMixin(MultiCategoricalMixin):
             # If req == 0.5 (Flexible), add 0 (allow both)
             
         return logits + final_mask
+

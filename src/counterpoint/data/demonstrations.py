@@ -19,8 +19,16 @@ class DemonstrationGenerator:
         self.rng = np.random.default_rng()
     
     def _build_observation(self, score_targets: List[Tuple[int, int]], 
-                           step: int, hand_pos: int) -> dict:
-        """Build observation dict matching PianoEnv format."""
+                           step: int, hand_pos: int, prev_finger: int = None, prev_note: int = None) -> dict:
+        """Build observation dict matching PianoEnv format.
+        
+        Args:
+            score_targets: List of (note, is_black) tuples
+            step: Current step in the score
+            hand_pos: Current hand position
+            prev_finger: Previous finger used (1-5, None if first step)
+            prev_note: Previous note played (None if first step)
+        """
         grid = np.zeros((2, self.pitch_range, self.lookahead), dtype=np.float32)
         
         for t in range(self.lookahead):
@@ -45,15 +53,24 @@ class DemonstrationGenerator:
                 fingers_black_mask = np.ones(5, dtype=np.float32)
             else:
                 fingers_black_mask = np.zeros(5, dtype=np.float32)
+            
+            # finger_mask: forbid previous finger if note changed
+            finger_mask = np.ones(5, dtype=np.float32)  # Default: all allowed
+            if prev_finger is not None and prev_note is not None:
+                if prev_note != target_note:
+                    finger_mask[prev_finger - 1] = 0.0  # Forbid previous finger
                 
         else:
             relative_target = 0.0
             num_notes = 1.0
             fingers_black_mask = np.zeros(5, dtype=np.float32)
-            
+            finger_mask = np.ones(5, dtype=np.float32)
+        
+        # Concatenate: [fingers_black_mask(5), num_notes(1), finger_mask(5)] = 11 values
         action_mask = np.concatenate([
             fingers_black_mask,
-            np.array([num_notes], dtype=np.float32)
+            np.array([num_notes], dtype=np.float32),
+            finger_mask
         ])
         
         return {
@@ -120,6 +137,8 @@ class DemonstrationGenerator:
         # Generate demonstrations
         demos = []
         hand_pos = base_column  # Start hand at root
+        prev_finger = None
+        prev_note = None
         
         for step, (note, is_black) in enumerate(score_targets):
             if step >= len(fingering):
@@ -127,8 +146,9 @@ class DemonstrationGenerator:
                 
             finger = fingering[step]
             
-            # Build observation
-            obs = self._build_observation(score_targets, step, hand_pos)
+            # Build observation with previous finger info for finger_mask
+            obs = self._build_observation(score_targets, step, hand_pos, 
+                                          prev_finger=prev_finger, prev_note=prev_note)
             
             # Build expert action
             action = self._finger_to_action(finger, is_black)
@@ -137,6 +157,10 @@ class DemonstrationGenerator:
             
             # Update hand position (leftmost finger aligns with note)
             hand_pos = note - (finger - 1)
+            
+            # Track for next iteration
+            prev_finger = finger
+            prev_note = note
         
         return demos
     

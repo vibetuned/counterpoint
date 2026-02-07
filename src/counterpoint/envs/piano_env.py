@@ -38,14 +38,15 @@ class PianoEnv(gym.Env):
         })
 
         # --- Observation Space ---
-        # action_mask: 6 values - [fingers_black(5), num_notes(1)]
+        # action_mask: 11 values - [fingers_black(5), num_notes(1), finger_mask(5)]
         # fingers_black: 0 = white key, 1 = black key (for masking key color)
         # num_notes: number of notes at current timestep (for priority head)
+        # finger_mask: 1 = finger allowed, 0 = finger forbidden (based on previous action)
         self.observation_space = spaces.Dict({
             "grid": spaces.Box(low=0, high=1, shape=(self.ROWS, self.PITCH_RANGE, self.LOOKAHEAD), dtype=np.float32),
             "hand_state": spaces.Box(low=0, high=self.PITCH_RANGE, shape=(1,), dtype=np.float32),
             "relative_target": spaces.Box(low=-self.PITCH_RANGE, high=self.PITCH_RANGE, shape=(1,), dtype=np.float32),
-            "action_mask": spaces.Box(low=0, high=5, shape=(6,), dtype=np.float32)
+            "action_mask": spaces.Box(low=0, high=5, shape=(11,), dtype=np.float32)
         })
 
         # State
@@ -67,7 +68,7 @@ class PianoEnv(gym.Env):
         self.reward_function.add(FingerRepetitionPenalty())
         self.reward_function.add(FingerNotRepetitionReward(reward=2.0))
         self.reward_function.add(ArpeggioReward(10.0,5.0))  # Encourages finger variety
-        self.reward_function.add(ArpeggioReward2(2.0,1.0))  # Encourages finger variety
+        #self.reward_function.add(ArpeggioReward2(2.0,1.0))  # Encourages finger variety
         #self.reward_function.add(AccuracyReward())
         self.reward_function.add(NoteProgressReward(bonus=0.5))  # Intermediate progress
         #self.reward_function.add(CompletionReward(bonus=50.0))
@@ -170,11 +171,13 @@ class PianoEnv(gym.Env):
         Mask logic:
         - num_notes: count of notes at current timestep (sum of grid[:, :, 0])
         - fingers_black_mask: force key color based on target note
+        - finger_mask: forbid repeating previous finger when note changes
         
         Returns:
             Dict with:
             - fingers_black_mask: 5 values (0 = white, 1 = black)
             - num_notes: number of notes to play (for priority head)
+            - finger_mask: 5 values (1 = allowed, 0 = forbidden)
         """
         # Calculate num_notes from grid if provided
         if grid is not None:
@@ -187,7 +190,7 @@ class PianoEnv(gym.Env):
         num_notes = max(1, min(5, num_notes))
         
         if self._current_step < len(self._score_targets):
-            _, target_is_black = self._score_targets[self._current_step]
+            target_note, target_is_black = self._score_targets[self._current_step]
             
             if target_is_black:
                 # Target is BLACK: force black keys
@@ -196,12 +199,33 @@ class PianoEnv(gym.Env):
                 # Target is WHITE: force white keys
                 fingers_black_mask = np.zeros(5, dtype=np.float32)
         else:
+            target_note = None
             # No target - default to white
             fingers_black_mask = np.zeros(5, dtype=np.float32)
         
+        # Generate finger_mask: forbid previous finger when note changes
+        finger_mask = np.ones(5, dtype=np.float32)  # Default: all fingers allowed
+        
+        if self._last_action is not None and target_note is not None:
+            # Get previous note and finger
+            if self._current_step > 0:
+                prev_note, _ = self._score_targets[self._current_step - 1]
+            else:
+                prev_note = None
+            
+            # Only mask if current note differs from previous note
+            if prev_note is not None and prev_note != target_note:
+                # Find which finger was used in last action
+                last_fingers = self._last_action.get("fingers", None)
+                if last_fingers is not None:
+                    for i, pressed in enumerate(last_fingers):
+                        if pressed == 1:
+                            finger_mask[i] = 0.0  # Forbid this finger
+        
         return {
             "fingers_black_mask": fingers_black_mask,
-            "num_notes": num_notes
+            "num_notes": num_notes,
+            "finger_mask": finger_mask
         }
 
     def _get_obs(self):
@@ -229,10 +253,11 @@ class PianoEnv(gym.Env):
         
         # Get action mask with num_notes calculated from grid
         mask = self.get_action_mask(grid=grid)
-        # Concatenate: [fingers_black_mask(5), num_notes(1)] = 6 values
+        # Concatenate: [fingers_black_mask(5), num_notes(1), finger_mask(5)] = 11 values
         action_mask = np.concatenate([
             mask["fingers_black_mask"],
-            np.array([mask["num_notes"]], dtype=np.float32)
+            np.array([mask["num_notes"]], dtype=np.float32),
+            mask["finger_mask"]
         ])
                     
         return {

@@ -123,7 +123,7 @@ def train(steps=None, resume_path=None, use_bc=None, use_rnd=None, bc_coef=None,
             bc_decay_rate=exp_config.get("bc_decay_rate", 0.995),
             bc_min_coefficient=exp_config.get("bc_min_coefficient", 0.05),
             rnd_coefficient=final_rnd_coef,
-            obs_dim=1048,  # mask(6) + grid(1040) + hand_state(1) + relative_target(1)
+            obs_dim=1053,  # mask(11) + grid(1040) + hand_state(1) + relative_target(1)
             device=str(device)
         )
 
@@ -149,7 +149,10 @@ def train(steps=None, resume_path=None, use_bc=None, use_rnd=None, bc_coef=None,
             exploration_manager=exploration_manager
         )
     else:
-        trainer = SequentialTrainer(cfg=cfg_agent, env=env, agents=agent)
+        # Use DiagnosticTrainer for detailed logging even without exploration
+        from counterpoint.exploration import DiagnosticTrainer
+        print("Using DiagnosticTrainer with detailed logging...")
+        trainer = DiagnosticTrainer(cfg=cfg_agent, env=env, agents=agent)
     
     print(f"Starting training for {cfg_agent['timesteps']} steps...")
     trainer.train()

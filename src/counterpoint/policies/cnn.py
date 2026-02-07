@@ -19,7 +19,7 @@ class ConvPolicy(MaskedMultiCategoricalMixin, Model):
         # Grid: 2 rows x 52 cols x 10 lookahead -> treat as 10 channels, 2x52 spatial
         self.grid_size = 2 * 52 * 10
         self.extra_features = 2  # hand_state + relative_target
-        self.mask_size = 6  # fingers_black(5) + num_notes(1)
+        self.mask_size = 11  # fingers_black(5) + num_notes(1) + finger_mask(5)
         self.hidden_size = 128  # Shared hidden size
         
         # Convolutional layers (input: 10 channels, 2 height, 52 width)
@@ -79,11 +79,14 @@ class ConvPolicy(MaskedMultiCategoricalMixin, Model):
         shared_features = self.feature_fc(combined)  # (batch, hidden_size)
         
         # Get finger mask from priority head using dynamic num_notes
+        # Pass env_finger_mask so priority head only samples from allowed fingers
         max_num_notes = max(1, int(num_notes.max().item()))
+        env_finger_mask = action_mask[:, 6:11]  # (batch, 5) - 1=allowed, 0=forbidden
         finger_mask, _ = self.priority_head.get_finger_mask(
             shared_features, 
             num_fingers=max_num_notes,
-            training=self.training
+            training=self.training,
+            env_finger_mask=env_finger_mask
         )
         
         # Get action logits
@@ -100,7 +103,7 @@ class ConvValue(DeterministicMixin, Model):
         
         self.grid_size = 2 * 52 * 10
         self.extra_features = 2
-        self.mask_size = 6
+        self.mask_size = 11
         
         self.conv = nn.Sequential(
             nn.Conv2d(10, 32, kernel_size=(2, 5), stride=1, padding=(0, 2)),

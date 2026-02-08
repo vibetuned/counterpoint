@@ -1,3 +1,37 @@
+# Piano PASLCLRADE97 Rules
+
+Based in the book "An Ergonomic Model of Keyboard Fingering for Melodic
+Fragments"
+
+## Span Level Definition
+
+| Level | Type | Definition & Logic | Model Calculation / Constraint |
+| :--- | :--- | :--- | :--- |
+| **Practical** | **MaxPrac** | [cite_start]The maximum stretch a pianist actually uses in performance for finger legato[cite: 54]. | [cite_start]Smaller than anatomical limits ($MaxPoss$) to avoid awkward hand rotation[cite: 55, 56]. |
+| **Practical** | **MinPrac** | [cite_start]The smallest permissible distance between consecutive notes[cite: 57]. | [cite_start]For thumb pairs, this is the maximum distance for passing under/over (negative number)[cite: 67]. |
+| **Comfortable**| **MaxComf** | [cite_start]The upper limit of a "comfortable" stretch before strain points are applied[cite: 114]. | [cite_start]Set at exactly **2 semitones smaller** than $MaxPrac$ for all pairs[cite: 117]. |
+| **Comfortable**| **MinComf** | [cite_start]The lower limit of a "comfortable" stretch[cite: 114]. | [cite_start]Set **2 semitones larger** than $MinPrac$ for thumb pairs; equal to $MinPrac$ for others[cite: 117]. |
+| **Relaxed** | **MaxRel** | [cite_start]The interval where fingers fall without tension onto the keys[cite: 107]. | [cite_start]For non-thumb pairs, it is **twice the difference** between finger numbers[cite: 111]. |
+| **Relaxed** | **MinRel** | [cite_start]The smallest interval of the "relaxed" or neutral hand range[cite: 110]. | [cite_start]Set at **1 semitone smaller** than $MaxRel$ for non-thumb pairs[cite: 111]. |
+
+
+## Finger Span Values
+
+| Finger Pair | MinPrac | MinComf | MinRel | MaxRel | MaxComf | MaxPrac |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| 1-2 | -5 | -3 | 1 | 5 | 8 | 10 |
+| 1-3 | -4 | -2 | 3 | 7 | 10 | 12 |
+| 1-4 | -3 | -1 | 5 | 9 | 12 | 14 |
+| 1-5 | -1 | 1 | 7 | 11 | 13 | 15 |
+| 2-3 | 1 | 1 | 1 | 2 | 3 | 5 |
+| 2-4 | 1 | 1 | 3 | 4 | 5 | 7 |
+| 2-5 | 2 | 2 | 5 | 6 | 8 | 10 |
+| 3-4 | 1 | 1 | 1 | 2 | 2 | 4 |
+| 3-5 | 1 | 1 | 3 | 4 | 5 | 7 |
+| 4-5 | 1 | 1 | 1 | 2 | 3 | 5 |
+
+## Rules
+
 | Rule N° | Application | Description | Score | Source |
 | :--- | :--- | :--- | :--- | :--- |
 | 1 | Consecutive Spans | [cite_start]**Stretch Rule**: Penalty for intervals that exceed the maximum comfortable span ($MaxComf$) or are less than the minimum comfortable span ($MinComf$)[cite: 215]. | [cite_start]2 points per semitone outside the range[cite: 215]. [cite_start]| [cite: 215] |

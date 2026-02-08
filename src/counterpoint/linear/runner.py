@@ -55,7 +55,7 @@ def run_linear_agent(debug=False):
                 time.sleep(0.2) # Slow down to watch
                 
             print(f"Episode finished. Total Reward: {getattr(env.unwrapped, '_episode_reward', 0.0):.2f}")
-            time.sleep(1.0) # Pause between episodes
+            time.sleep(0.2) # Pause between episodes
             
     except KeyboardInterrupt:
         print("\nStopped by user.")

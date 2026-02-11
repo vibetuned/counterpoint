@@ -2,7 +2,10 @@
 """
 Rules for the Linear Agent cost function.
 
-Uses Parncutt 1997 ergonomic fingering rules from the shared rules module.
+Supports two ergonomic models:
+  - Parncutt 1997 (default): calculate_transition_cost
+  - Jacobs 2001 (refined):   calculate_jacobs_transition_cost
+
 Legacy rules are kept for backwards compatibility.
 """
 
@@ -17,6 +20,10 @@ from counterpoint.rules.parncutt97 import (
     rule10_thumb_on_black,
     rule11_five_on_black,
     rule12_thumb_passing,
+)
+
+from counterpoint.rules.jacobs01 import (
+    calculate_jacobs_consecutive_cost,
 )
 
 
@@ -79,7 +86,7 @@ def rule_position_change(prev_finger, prev_note, curr_finger, curr_note):
 
 
 # =============================================================================
-# MAIN COST FUNCTION
+# MAIN COST FUNCTIONS
 # =============================================================================
 
 def calculate_transition_cost(prev_finger, prev_note, prev_is_black, curr_finger, curr_note, curr_is_black):
@@ -93,6 +100,24 @@ def calculate_transition_cost(prev_finger, prev_note, prev_is_black, curr_finger
     The LinearAgent's Dijkstra search optimizes for consecutive transitions.
     """
     return calculate_consecutive_cost(
+        prev_finger, prev_note, prev_is_black,
+        curr_finger, curr_note, curr_is_black
+    )
+
+
+def calculate_jacobs_transition_cost(prev_finger, prev_note, prev_is_black, curr_finger, curr_note, curr_is_black):
+    """
+    Aggregates all cost rules for a transition using Jacobs 2001 model.
+    
+    Key differences from Parncutt 1997:
+    - Span rules use physical distance mapping (Rule A)
+    - Large-span uses 1x multiplier for ALL pairs (Rule C)
+    - Only finger 4 is considered weak (Rule 6 mod)
+    - Three-four-five rule is disabled (Rule 7 disc)
+    
+    Note: Rules 4, 5 require 3-note context and are not included here.
+    """
+    return calculate_jacobs_consecutive_cost(
         prev_finger, prev_note, prev_is_black,
         curr_finger, curr_note, curr_is_black
     )

@@ -2,7 +2,9 @@
 import numpy as np
 import heapq
 #from counterpoint.linear.rules import calculate_transition_cost
-from counterpoint.rules import calculate_parncutt_cost 
+#from counterpoint.rules import calculate_parncutt_cost 
+from counterpoint.rules import calculate_jacobs_cost
+
 class LinearAgent:
     def __init__(self):
         # Finger indices: 1 to 5
@@ -86,7 +88,7 @@ class LinearAgent:
                  next_fingers = [f for f in self.fingers if f != finger]
                  
             for next_f in next_fingers:
-                cost = calculate_parncutt_cost(
+                cost = calculate_jacobs_cost(
                     prev_finger=finger,
                     prev_note=curr_note,
                     prev_is_black=curr_is_black,
@@ -241,7 +243,7 @@ class LinearAgent:
                  candidates = [f for f in self.fingers if f != root_finger]
             
             for f in candidates:
-                cost = calculate_parncutt_cost(
+                cost = calculate_jacobs_cost(
                     prev_finger=root_finger,
                     prev_note=root_note,
                     prev_is_black=root_is_black,
@@ -284,7 +286,7 @@ class LinearAgent:
                  next_fingers_to_consider = [f for f in self.fingers if f != finger]
 
             for next_f in next_fingers_to_consider:
-                edge_cost = calculate_parncutt_cost(
+                edge_cost = calculate_jacobs_cost(
                     prev_finger=finger, 
                     prev_note=curr_note, 
                     prev_is_black=curr_is_black,

@@ -157,15 +157,22 @@ def rule3_large_span(finger1: int, finger2: int, span: float) -> float:
 # 2 points for "full" change, 1 point for "half" change.
 # =============================================================================
 
-def _compute_hand_position(finger: int, note: int) -> float:
-    """Compute hand position from finger and note."""
+def _compute_hand_position(finger: int, note: int, hand: int = 1) -> float:
+    """Compute hand position from finger and note.
+    
+    RH: thumb (1) is leftmost → pos = note - (finger - 1)
+    LH: pinky (5) is leftmost → pos = note - (5 - finger)
+    """
+    if hand == 2:  # LH
+        return note - (5 - finger)
     return note - (finger - 1)
 
 
 def rule4_position_change_count(
     finger1: int, note1: int,
     finger2: int, note2: int,
-    finger3: int, note3: int
+    finger3: int, note3: int,
+    hand: int = 1
 ) -> float:
     """
     Rule 4: Position-Change-Count Rule.
@@ -180,13 +187,14 @@ def rule4_position_change_count(
         finger1, note1: First note fingering
         finger2, note2: Second note fingering  
         finger3, note3: Third note fingering
+        hand: 1=RH, 2=LH
     
     Returns:
         Cost: 2 points for full change, 1 point for half change
     """
-    pos1 = _compute_hand_position(finger1, note1)
-    pos2 = _compute_hand_position(finger2, note2)
-    pos3 = _compute_hand_position(finger3, note3)
+    pos1 = _compute_hand_position(finger1, note1, hand)
+    pos2 = _compute_hand_position(finger2, note2, hand)
+    pos3 = _compute_hand_position(finger3, note3, hand)
     
     change_1_to_2 = pos1 != pos2
     change_2_to_3 = pos2 != pos3
@@ -477,7 +485,8 @@ def calculate_parncutt_cost(
     prev_finger: int, prev_note: int, prev_is_black: bool,
     curr_finger: int, curr_note: int, curr_is_black: bool,
     next_finger: Optional[int] = None, next_note: Optional[int] = None, next_is_black: Optional[bool] = None,
-    prev_prev_finger: Optional[int] = None, prev_prev_note: Optional[int] = None
+    prev_prev_finger: Optional[int] = None, prev_prev_note: Optional[int] = None,
+    hand: int = 1
 ) -> float:
     """
     Calculate total Parncutt cost for a fingering transition.
@@ -508,7 +517,8 @@ def calculate_parncutt_cost(
         cost += rule4_position_change_count(
             prev_prev_finger, prev_prev_note,
             prev_finger, prev_note,
-            curr_finger, curr_note
+            curr_finger, curr_note,
+            hand=hand
         )
         cost += rule5_position_change_size(
             prev_prev_finger, prev_prev_note,

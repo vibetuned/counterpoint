@@ -12,6 +12,20 @@ from counterpoint.envs.rewards import (
 )
 from counterpoint.scores.scales import MajorScaleGenerator
 from counterpoint.scores.chords import ChordProgressionGenerator, ArpeggioGenerator
+from counterpoint.scores.mei import MEIScoreGenerator
+
+# Generator registry
+GENERATOR_REGISTRY = {
+    "arpeggio": lambda **kw: ArpeggioGenerator(kw.get("pitch_range", 52), notes_per_beat=1, hand=kw.get("hand", 1)),
+    "scale": lambda **kw: MajorScaleGenerator(kw.get("pitch_range", 52), hand=kw.get("hand", 1)),
+    "chord": lambda **kw: ChordProgressionGenerator(kw.get("pitch_range", 52), hand=kw.get("hand", 1)),
+    "mei": lambda **kw: MEIScoreGenerator(
+        kw["mei_path"], 
+        staff=kw.get("hand", 1),
+        loop=kw.get("mei_loop", True),
+        pitch_range=kw.get("pitch_range", 52),
+    ),
+}
 
 
 class PianoEnv(gym.Env):
@@ -23,7 +37,8 @@ class PianoEnv(gym.Env):
     """
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
-    def __init__(self, render_mode=None):
+    def __init__(self, render_mode=None, score_generator_type="arpeggio", 
+                 mei_path=None, mei_loop=True, hand=1, mirror_obs=False):
         super().__init__()
         
         # --- Constants ---
@@ -31,6 +46,8 @@ class PianoEnv(gym.Env):
         self.ROWS = 2  # 0: Natural, 1: Accidental
         self.LOOKAHEAD = 10
         self.render_mode = render_mode
+        self.hand = hand  # 1=right hand, 2=left hand
+        self.mirror_obs = mirror_obs  # Mirror obs for unified RH/LH model
         
         # --- Action Space (fingering only, no hand position) ---
         self.action_space = spaces.Dict({
@@ -61,7 +78,23 @@ class PianoEnv(gym.Env):
         
         # Helper Modules
         self.renderer = PianoRenderer(self.PITCH_RANGE, self.LOOKAHEAD, self.render_mode)
-        self.score_generator = ArpeggioGenerator(self.PITCH_RANGE, notes_per_beat=1)
+        
+        # Score Generator (configured via kwargs)
+        self.score_generator_type = score_generator_type
+        if score_generator_type not in GENERATOR_REGISTRY:
+            raise ValueError(
+                f"Unknown score_generator_type: {score_generator_type}. "
+                f"Available: {list(GENERATOR_REGISTRY.keys())}"
+            )
+        if score_generator_type == "mei" and mei_path is None:
+            raise ValueError("mei_path is required when score_generator_type='mei'")
+        
+        self.score_generator = GENERATOR_REGISTRY[score_generator_type](
+            pitch_range=self.PITCH_RANGE,
+            mei_path=mei_path,
+            hand=self.hand,
+            mei_loop=mei_loop,
+        )
         self.reward_function = RewardMixing()
         self.reward_function.add(MovementPenalty())
         #self.reward_function.add(KeyChangePenalty())
@@ -111,8 +144,11 @@ class PianoEnv(gym.Env):
         if self._score_targets:
             first_notes = self._get_target_notes(0)
             if first_notes:
-                first_note = first_notes[0][0]  # Get column of first note
-                self._hand_pos = first_note  # Start with hand at first note
+                if self.hand == 2:  # LH: anchor from rightmost note
+                    anchor_note = first_notes[-1][0]
+                else:  # RH: anchor from leftmost note
+                    anchor_note = first_notes[0][0]
+                self._hand_pos = anchor_note
             else:
                 self._hand_pos = self.PITCH_RANGE // 2
         else:
@@ -126,29 +162,41 @@ class PianoEnv(gym.Env):
         """
         Derive hand position from fingering action.
         
-        Rule: Leftmost pressed finger aligns with leftmost target note.
+        RH: Leftmost pressed finger aligns with leftmost target note.
+        LH: Rightmost pressed finger aligns with rightmost target note.
         """
         fingers = action["fingers"]
         pressed_indices = [i for i, f in enumerate(fingers) if f == 1]
         
         if not pressed_indices:
-            # No fingers pressed - no change
             return self._hand_pos
         
-        leftmost_finger = min(pressed_indices)
-        
-        # Get current target note(s)
         if self._current_step < len(self._score_targets):
             target_notes = self._get_target_notes(self._current_step)
             if target_notes:
-                target_note = target_notes[0][0]  # Leftmost note column
-                # Place hand so leftmost finger hits target note
-                return target_note - leftmost_finger
+                if self.hand == 2:  # LH
+                    # Rightmost finger aligns with rightmost target
+                    rightmost_finger = max(pressed_indices)
+                    target_note = target_notes[-1][0]
+                    return target_note - rightmost_finger
+                else:  # RH
+                    # Leftmost finger aligns with leftmost target
+                    leftmost_finger = min(pressed_indices)
+                    target_note = target_notes[0][0]
+                    return target_note - leftmost_finger
         
         return self._hand_pos
 
     def step(self, action):
         self._step_count += 1  # Track total actions
+        
+        # Un-mirror action for LH when using mirrored observations
+        # Model outputs in canonical RH space; flip to physical LH space
+        if self.hand == 2 and self.mirror_obs:
+            action = {
+                "fingers": action["fingers"][::-1].copy(),
+                "fingers_black": action["fingers_black"][::-1].copy(),
+            }
         
         # Compute derived hand position from fingering
         self._derived_hand_pos = self._compute_hand_position(action)
@@ -283,11 +331,15 @@ class PianoEnv(gym.Env):
                         else:
                             grid[0, note, t] = 1.0  # Natural Row
         
-        # Compute relative target position (use leftmost note of chord)
+        # Compute relative target position
+        # RH uses leftmost note, LH uses rightmost note
         if self._current_step < len(self._score_targets):
             target_notes = self._get_target_notes(self._current_step)
             if target_notes:
-                target_note = target_notes[0][0]
+                if self.hand == 2:  # LH: anchor from rightmost
+                    target_note = target_notes[-1][0]
+                else:  # RH: anchor from leftmost
+                    target_note = target_notes[0][0]
                 relative_target = float(target_note - self._hand_pos)
             else:
                 relative_target = 0.0
@@ -303,12 +355,19 @@ class PianoEnv(gym.Env):
             mask["finger_mask"]
         ])
                     
-        return {
+        obs = {
             "grid": grid,
             "hand_state": np.array([self._hand_pos], dtype=np.float32),
             "relative_target": np.array([relative_target], dtype=np.float32),
             "action_mask": action_mask
         }
+        
+        # Mirror observation for LH so model sees canonical RH-like view
+        if self.hand == 2 and self.mirror_obs:
+            obs["grid"] = obs["grid"][:, ::-1, :].copy()
+            obs["relative_target"] = -obs["relative_target"]
+        
+        return obs
 
     def close(self):
         self.renderer.close()

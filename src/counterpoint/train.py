@@ -43,7 +43,27 @@ def load_config(path="conf/base.yaml"):
     with open(path, "r") as f:
         return yaml.safe_load(f)
 
-def train(steps=None, resume_path=None, use_bc=None, use_rnd=None, bc_coef=None, rnd_coef=None):
+def _env_kwargs_from_config(config, score_type_override=None, mei_path_override=None, hand_override=None):
+    """Build env kwargs from config, with optional CLI overrides."""
+    env_cfg = config.get("env", {})
+    kwargs = {}
+    
+    score_type = score_type_override or env_cfg.get("score_generator", "arpeggio")
+    kwargs["score_generator_type"] = score_type
+    kwargs["hand"] = hand_override or env_cfg.get("hand", 1)
+    kwargs["mirror_obs"] = env_cfg.get("mirror_obs", False)
+    
+    if score_type == "mei":
+        mei_path = mei_path_override or env_cfg.get("mei_path")
+        if mei_path is None:
+            raise ValueError("mei_path must be set when using mei score generator")
+        kwargs["mei_path"] = mei_path
+        kwargs["mei_loop"] = env_cfg.get("mei_loop", True)
+    
+    return kwargs
+
+def train(steps=None, resume_path=None, use_bc=None, use_rnd=None, bc_coef=None, rnd_coef=None,
+          score_type=None, mei_path=None):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
 
@@ -72,7 +92,9 @@ def train(steps=None, resume_path=None, use_bc=None, use_rnd=None, bc_coef=None,
         
     # Load Env
     env_name = config["env"]["name"]
-    env = gym.make(env_name)
+    env_kwargs = _env_kwargs_from_config(config, score_type_override=score_type, mei_path_override=mei_path)
+    print(f"Score generator: {env_kwargs.get('score_generator_type', 'arpeggio')}")
+    env = gym.make(env_name, **env_kwargs)
     env = FlattenActionWrapper(env)
     env = wrap_env(env) # SKRL wrapper
 
@@ -160,7 +182,7 @@ def train(steps=None, resume_path=None, use_bc=None, use_rnd=None, bc_coef=None,
 
 from counterpoint.exploration import ExplorationTrainer
 
-def test(path=None):
+def test(path=None, score_type=None, mei_path=None):
     import time
     import glob
     
@@ -172,7 +194,9 @@ def test(path=None):
 
     # Load Env with Render
     env_name = config["env"]["name"]
-    env = gym.make(env_name, render_mode="human") 
+    env_kwargs = _env_kwargs_from_config(config, score_type_override=score_type, mei_path_override=mei_path)
+    print(f"Score generator: {env_kwargs.get('score_generator_type', 'arpeggio')}")
+    env = gym.make(env_name, render_mode="human", **env_kwargs) 
     env = FlattenActionWrapper(env)
     env = wrap_env(env)
 

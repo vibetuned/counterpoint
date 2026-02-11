@@ -10,4 +10,5 @@ wheels/
 .venv
 .pytest_cache
 .pytest_cache/
+test_data/
 runs/

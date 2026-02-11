@@ -148,7 +148,13 @@ class LinearAgent:
         if base_env._current_step > 0:
             hist_idx = base_env._current_step - 1
             if hist_idx < len(base_env._score_targets):
-                prev_note, prev_is_black = base_env._score_targets[hist_idx]
+                target = base_env._score_targets[hist_idx]
+                # Normalize chords to single note (LH: rightmost, RH: leftmost)
+                if isinstance(target[0], tuple):
+                    note = target[-1] if base_env.hand == 2 else target[0]
+                    prev_note, prev_is_black = note
+                else:
+                    prev_note, prev_is_black = target
                 
         return prev_finger, prev_note, prev_is_black
 
@@ -183,6 +189,7 @@ class LinearAgent:
     def _get_lookahead_targets(self, env):
         """
         Extracts (note, is_black) from env's score_targets for the lookahead window.
+        Normalizes chords to their first (leftmost) note to match env behavior.
         """
         base_env = env.unwrapped
         start_step = base_env._current_step
@@ -193,7 +200,13 @@ class LinearAgent:
         for t in range(horizon):
             idx = start_step + t
             if idx < max_len:
-                targets.append(base_env._score_targets[idx])
+                target = base_env._score_targets[idx]
+                # Normalize: chords are tuple-of-tuples, single notes are (int, int)
+                if isinstance(target[0], tuple):
+                    # LH: use rightmost note, RH: use leftmost note
+                    targets.append(target[-1] if base_env.hand == 2 else target[0])
+                else:
+                    targets.append(target)
             else:
                 break
         return targets

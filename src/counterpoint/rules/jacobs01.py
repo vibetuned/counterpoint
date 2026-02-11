@@ -260,7 +260,8 @@ def calculate_jacobs_cost(
     prev_finger: int, prev_note: int, prev_is_black: bool,
     curr_finger: int, curr_note: int, curr_is_black: bool,
     next_finger: Optional[int] = None, next_note: Optional[int] = None, next_is_black: Optional[bool] = None,
-    prev_prev_finger: Optional[int] = None, prev_prev_note: Optional[int] = None
+    prev_prev_finger: Optional[int] = None, prev_prev_note: Optional[int] = None,
+    hand: int = 1
 ) -> float:
     """
     Calculate total Jacobs 2001 cost for a fingering transition.
@@ -294,7 +295,8 @@ def calculate_jacobs_cost(
         cost += rule4_position_change_count(
             prev_prev_finger, prev_prev_note,
             prev_finger, prev_note,
-            curr_finger, curr_note
+            curr_finger, curr_note,
+            hand=hand
         )
         cost += rule5_position_change_size(
             prev_prev_finger, prev_prev_note,

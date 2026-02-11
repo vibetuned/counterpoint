@@ -90,8 +90,9 @@ SCALE_FINGERINGS = {
 class MajorScaleGenerator:
     """Generates random major scale exercises."""
     
-    def __init__(self, pitch_range: int = 52):
+    def __init__(self, pitch_range: int = 52, hand: int = 1):
         self.pitch_range = pitch_range
+        self.hand = hand  # 1=RH, 2=LH
         self.scale_names = list(MAJOR_SCALES.keys())
     
     def generate(self, rng: np.random.Generator) -> List[Tuple[int, int]]:
@@ -112,7 +113,10 @@ class MajorScaleGenerator:
         # Pick a random starting octave (ensure we have room for the scale)
         # Each octave is 7 columns wide
         max_octave = (self.pitch_range - 7) // 7
-        start_octave = rng.integers(1, max(2, max_octave))
+        if self.hand == 2:  # LH: favor lower register
+            start_octave = rng.integers(1, max(2, max_octave - 1))
+        else:  # RH: favor middle-upper register
+            start_octave = rng.integers(1, max(2, max_octave))
         base_column = start_octave * 7 + root_offset
         
         # Ensure we stay in bounds
@@ -167,13 +171,17 @@ class MajorScaleGenerator:
 class SimpleScaleGenerator:
     """Generates simple white-key-only scales (original behavior)."""
     
-    def __init__(self, pitch_range: int = 52):
+    def __init__(self, pitch_range: int = 52, hand: int = 1):
         self.pitch_range = pitch_range
+        self.hand = hand
     
     def generate(self, rng: np.random.Generator) -> List[Tuple[int, int]]:
         """Generate a simple ascending/descending white key pattern."""
         length = rng.integers(5, 13)
-        start_note = rng.integers(10, self.pitch_range - 15)
+        if self.hand == 2:  # LH: favor lower register
+            start_note = rng.integers(5, self.pitch_range - 20)
+        else:  # RH: favor upper register
+            start_note = rng.integers(10, self.pitch_range - 15)
         direction = 1
         current_note = start_note
         

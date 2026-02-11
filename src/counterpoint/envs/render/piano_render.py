@@ -74,7 +74,9 @@ class PianoRenderer:
 
         # --- Bottom: Piano & Hand ---
         self.ax_piano.clear()
-        self.ax_piano.set_title("Piano State")
+        hand = getattr(env, 'hand', 1)
+        hand_label = "LH" if hand == 2 else "RH"
+        self.ax_piano.set_title(f"Piano State ({hand_label})")
         self.ax_piano.set_xlim(0, self.pitch_range)
         self.ax_piano.set_ylim(0, 1)
         self.ax_piano.set_yticks([])
@@ -97,8 +99,13 @@ class PianoRenderer:
                 rect = plt.Rectangle((i + 0.65, 0.35), 0.7, 0.65, facecolor='black', edgecolor='black', zorder=10)
                 self.ax_piano.add_patch(rect)
 
-        # Draw Hand (Yellow dot on anchor)
-        anchor_x = env._hand_pos + 0.5
+        # Draw Hand (Yellow dot on anchor = thumb position)
+        hand = getattr(env, 'hand', 1)
+        # RH: thumb is leftmost (hand_pos), LH: thumb is rightmost (hand_pos + 4)
+        if hand == 2:
+            anchor_x = env._hand_pos + 4 + 0.5
+        else:
+            anchor_x = env._hand_pos + 0.5
         anchor_y = 0.0
         
         # Draw Fingers
@@ -106,8 +113,11 @@ class PianoRenderer:
         current_fingers = env._last_action["fingers"] if hasattr(env, "_last_action") and env._last_action is not None else [0]*5
         current_blacks = env._last_action["fingers_black"] if hasattr(env, "_last_action") and env._last_action is not None else [0]*5
         
+        
         for i in range(5):
-            finger_num = i + 1
+            # RH: finger 1 (thumb) at leftmost, 5 at rightmost
+            # LH: finger 5 (pinky) at leftmost, 1 (thumb) at rightmost
+            finger_num = (5 - i) if hand == 2 else (i + 1)
             key_idx = env._hand_pos + i
             if key_idx >= self.pitch_range:
                 continue

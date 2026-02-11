@@ -3,19 +3,30 @@ import gymnasium as gym
 import time
 from counterpoint.linear.agent import LinearAgent
 
-def run_linear_agent(debug=False):
+def run_linear_agent(debug=False, score_type=None, mei_path=None, hand=None):
     """
     Run the Linear Debugging Agent (Dijkstra) on the Piano environment.
     Runs continuously over multiple episodes.
     """
-    # Initialize Env
-    # Use "human" render mode to visualize
-    env = gym.make("Piano-v0", render_mode="human")
+    from counterpoint.train import load_config, _env_kwargs_from_config
+    
+    config = load_config()
+    env_kwargs = _env_kwargs_from_config(
+        config, 
+        score_type_override=score_type,
+        mei_path_override=mei_path,
+        hand_override=hand,
+    )
+    
+    hand_label = "LH" if env_kwargs.get("hand", 1) == 2 else "RH"
+    
+    # Initialize Env with config-driven kwargs
+    env = gym.make("Piano-v0", render_mode="human", **env_kwargs)
     
     agent = LinearAgent()
     
-    print("Starting Linear Debugging Agent...")
-    print("Rules 5-9 enabled.")
+    print(f"Starting Linear Debugging Agent ({hand_label})...")
+    print(f"Generator: {env_kwargs.get('score_generator_type', 'arpeggio')}")
     print("Press Ctrl+C to stop.")
     
     try:

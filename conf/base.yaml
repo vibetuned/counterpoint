@@ -25,6 +25,12 @@ env:
   pitch_range: 52
   rows: 2
   lookahead: 10
+  hand: 2                       # 1=right hand, 2=left hand
+  mirror_obs: false              # Mirror LH observations for unified model
+  score_generator: "arpeggio"  # Options: scale, chord, arpeggio, mei
+  mei_path: null               # Path to MEI file(s) when using mei generator
+  mei_loop: true               # Whether to loop through MEI files
+
 
 # Policy architecture: simple, conv, or transformer
 policy:

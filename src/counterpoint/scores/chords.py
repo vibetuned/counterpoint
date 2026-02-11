@@ -276,8 +276,9 @@ class ChordProgressionGenerator:
     - Position shifts (Rule 12)
     """
     
-    def __init__(self, pitch_range: int = 52, bars: int = 12, beats_per_bar: int = 4):
+    def __init__(self, pitch_range: int = 52, bars: int = 12, beats_per_bar: int = 4, hand: int = 1):
         self.pitch_range = pitch_range
+        self.hand = hand  # 1=RH, 2=LH
         self.bars = bars
         self.beats_per_bar = beats_per_bar
         self.total_beats = bars * beats_per_bar
@@ -303,7 +304,7 @@ class ChordProgressionGenerator:
         beat = 0
         prev_chord_semitones = []
         chords_in_register = 0
-        current_octave = rng.integers(2, 4)  # Start in middle registers
+        current_octave = rng.integers(1, 3) if self.hand == 2 else rng.integers(2, 4)
         
         while beat < self.total_beats:
             # === Rule 3: Harmonic rhythm (chord every 2 beats) ===
@@ -445,12 +446,13 @@ class ArpeggioGenerator:
     """
     
     def __init__(self, pitch_range: int = 52, bars: int = 4, 
-                 notes_per_beat: int = 4, beats_per_bar: int = 4):
+                 notes_per_beat: int = 4, beats_per_bar: int = 4, hand: int = 1):
         self.pitch_range = pitch_range
+        self.hand = hand  # 1=RH, 2=LH
         self.bars = bars
         self.notes_per_beat = notes_per_beat
         self.beats_per_bar = beats_per_bar
-        self.chord_gen = ChordProgressionGenerator(pitch_range, bars=bars)
+        self.chord_gen = ChordProgressionGenerator(pitch_range, bars=bars, hand=hand)
         
         # Weight patterns
         self.patterns = list(ArpeggioPattern)
@@ -470,7 +472,7 @@ class ArpeggioGenerator:
         diatonic = build_diatonic_chords(current_key)
         
         notes = []
-        current_octave = rng.integers(2, 4)
+        current_octave = rng.integers(1, 3) if self.hand == 2 else rng.integers(2, 4)
         prev_chord_semitones = []
         
         # One chord per bar for arpeggios

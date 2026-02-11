@@ -242,7 +242,7 @@ class ArpeggioReward(RewardComponent):
         # Use the primary (first pressed) finger for comparison
         current_finger = current_active[0]
         prev_finger = prev_active[0]
-        finger_direction = current_finger - prev_finger  # positive = higher finger
+        finger_direction = current_finger - prev_finger  # positive = higher index
         
         reward = 0.0
         
@@ -251,7 +251,12 @@ class ArpeggioReward(RewardComponent):
             reward += self.variety_bonus
         
         # Main reward: finger direction matches note direction
-        # Ascending notes should use ascending fingers, descending should use descending
+        # RH: ascending notes → ascending finger indices (1→2→3→4→5)
+        # LH: ascending notes → descending finger indices (5→4→3→2→1)
+        #     because for LH, pinky (index 4) is leftmost on keyboard
+        if env.hand == 2:  # LH: flip expected finger direction
+            finger_direction = -finger_direction
+        
         directions_match = (note_direction > 0 and finger_direction > 0) or \
                           (note_direction < 0 and finger_direction < 0)
         

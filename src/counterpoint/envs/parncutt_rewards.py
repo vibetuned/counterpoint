@@ -26,7 +26,7 @@ from counterpoint.rules.parncutt97 import (
     rule10_thumb_on_black,
     rule11_five_on_black,
     rule12_thumb_passing,
-    calculate_consecutive_cost,
+    calculate_parncutt_cost,
 )
 
 
@@ -459,10 +459,11 @@ class ThumbPassingPenalty(RewardComponent):
         if curr_note_info is None or prev_note_info is None:
             return 0.0
         
-        _, curr_is_black = curr_note_info
-        _, prev_is_black = prev_note_info
+        curr_col, curr_is_black = curr_note_info
+        prev_col, prev_is_black = prev_note_info
         
-        cost = rule12_thumb_passing(prev_finger, prev_is_black, curr_finger, curr_is_black)
+        span = lattice_span_to_semitones(prev_col, prev_is_black, curr_col, curr_is_black)
+        cost = rule12_thumb_passing(prev_finger, prev_is_black, curr_finger, curr_is_black, span)
         return -cost * self.weight
 
 
@@ -501,48 +502,54 @@ class Parncutt97AllPenalties(RewardComponent):
         
         curr_note, curr_is_black = curr_note_info
         prev_note, prev_is_black = prev_note_info
-        next_is_black = next_note_info[1] if next_note_info else None
         
-        # Playability filter: moderate penalty for RL (not 1e9)
-        span = lattice_span_to_semitones(prev_note, prev_is_black, curr_note, curr_is_black)
-        if not is_playable(prev_finger, curr_finger, span):
-            return -20.0 * self.weight
+        # Prepare context for calculate_parncutt_cost
+        next_finger = None
+        next_note = None
+        next_black = None
+        if next_note_info:
+            next_note, next_black = next_note_info
+            # We don't have next finger in RL (causal), so next_finger remains None
         
-        # Build history
+        prev_prev_finger = None
+        prev_prev_note = None
+        prev_prev_black = None
+        
+        # Build history and extract Prev-Prev context
+        # History stores (finger, note_col, is_black)
         if len(self._history) < 2:
             self._history.append((prev_finger, prev_note, prev_is_black))
         self._history.append((curr_finger, curr_note, curr_is_black))
         
-        # Keep only last 3
         if len(self._history) > 3:
             self._history = self._history[-3:]
-        
-        # Calculate consecutive cost
-        cost = calculate_consecutive_cost(
-            prev_finger, prev_note, prev_is_black,
-            curr_finger, curr_note, curr_is_black
-        )
-        
-        # Add rules 10, 11 with next note context
-        cost += rule10_thumb_on_black(
-            prev_finger, prev_is_black,
-            curr_finger, curr_is_black,
-            next_is_black=next_is_black
-        )
-        cost += rule11_five_on_black(
-            prev_finger, prev_is_black,
-            curr_finger, curr_is_black,
-            next_is_black=next_is_black
-        )
-        
-        # Add 3-note rules if we have enough history
-        if len(self._history) >= 3:
-            f1, n1, _ = self._history[-3]
-            f2, n2, _ = self._history[-2]
-            f3, n3, _ = self._history[-1]
             
-            cost += rule4_position_change_count(f1, n1, f2, n2, f3, n3)
-            cost += rule5_position_change_size(f1, n1, f3, n3)
-            cost += rule7_three_four_five([f1, f2, f3])
+        if len(self._history) >= 3:
+            prev_prev_finger, prev_prev_note, prev_prev_black = self._history[-3]
+            
+        # Determine hand (default to 1=RH)
+        hand = 1
+        if hasattr(env.unwrapped, 'hand'):
+            hand = env.unwrapped.hand
+
+        # Delegate to the authoritative cost function
+        try:
+            cost = calculate_parncutt_cost(
+                prev_finger, prev_note, prev_is_black,
+                curr_finger, curr_note, curr_is_black,
+                next_finger=next_finger, next_note=next_note, next_is_black=next_black,
+                prev_prev_finger=prev_prev_finger, prev_prev_note=prev_prev_note, prev_prev_is_black=prev_prev_black,
+                hand=hand
+            )
+        except Exception as e:
+            print(f"DEBUG Error in calculate_parncutt_cost: {e}")
+            import traceback
+            traceback.print_exc()
+            # Fallback for safety, though calculate_parncutt_cost handles most cases
+            cost = 20.0 # moderate penalty on error
+
+        # UNPLAYABLE_COST (1e9) is too high for Reward, clamp it
+        if cost >= 1e8:
+            cost = 20.0
         
         return -cost * self.weight

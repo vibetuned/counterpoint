@@ -1,6 +1,5 @@
 
 import numpy as np
-import heapq
 from counterpoint.rules import calculate_jacobs_cost, calculate_parncutt_cost
 
 _COST_FN_MAP = {
@@ -220,106 +219,145 @@ class LinearAgent:
 
     def _dijkstra(self, targets, start_finger, start_note, start_is_black):
         """
-        Finds shortest path of fingers from 'start_finger' (at 'start_note') 
-        through the sequence of 'targets'.
-        
-        State: (step_idx, finger_idx)
-        step_idx: -1 (Root/History) to len(targets)-1
+        Finds shortest path of fingers through the note sequence using an
+        'exploded network' where each node represents a (step, prev_finger,
+        curr_finger) triple.  This allows every edge to evaluate the FULL
+        cost function with 3-note context (prev_prev, prev, curr, next).
+
+        Uses NetworkX for graph construction and shortest-path search.
         """
+        import networkx as nx
+
         if not targets:
             return []
 
-        # Priority Queue: (cost, step_idx, finger_idx, path_list)
-        pq = []
-        
-        # Initialization
+        target_len = len(targets)
+        G = nx.DiGraph()
+
+        SOURCE = "source"
+        SINK = "sink"
+        G.add_node(SOURCE)
+        G.add_node(SINK)
+
+        # -----------------------------------------------------------------
+        # STEP 0: Connect source to initial nodes
+        # -----------------------------------------------------------------
+        first_note, first_is_black = targets[0]
+
         if start_finger is None:
-            # First note of episode: No history.
-            # We treat the first note (step=0) as the "roots".
-            # Can start with any of the 5 fingers.
+            # No history — any finger can start, no prev context
             for f in self.fingers:
-                heapq.heappush(pq, (0, 0, f, [f]))
+                node = (0, None, f)
+                G.add_node(node)
+                G.add_edge(SOURCE, node, weight=0)
         else:
-            # History exists. Root is at step = -1.
-            # We expand from Root (-1) to step 0.
-            # Logic:
-            # Root: (cost=0, step=-1, finger=start_finger, path=[])
-            # But the 'path' we return needs to start at step 0.
-            
-            # Optimization: Pre-calculate the first expansion to avoid managing step=-1 in the main loop
-            # and to keep path consistent.
-            
-            root_finger = start_finger
-            root_note = start_note
-            root_is_black = start_is_black
-            
-            curr_note, curr_is_black = targets[0]
-            
-            if root_note == curr_note:
-                 # Same note -> Must use same finger
-                 candidates = [root_finger]
+            # History exists — expand from anchor to step 0
+            if start_note == first_note:
+                candidates = [start_finger]
             else:
-                 # Note Change -> Must use DIFFERENT fingers
-                 candidates = [f for f in self.fingers if f != root_finger]
-            
+                candidates = [f for f in self.fingers if f != start_finger]
+
             for f in candidates:
                 cost = self._cost_fn(
-                    prev_finger=root_finger,
-                    prev_note=root_note,
-                    prev_is_black=root_is_black,
+                    prev_finger=start_finger,
+                    prev_note=start_note,
+                    prev_is_black=start_is_black,
                     curr_finger=f,
-                    curr_note=curr_note,
-                    curr_is_black=curr_is_black
+                    curr_note=first_note,
+                    curr_is_black=first_is_black,
+                    hand=getattr(self, '_hand', 1),
                 )
-                heapq.heappush(pq, (cost, 0, f, [f]))
+                node = (0, start_finger, f)
+                G.add_node(node)
+                G.add_edge(SOURCE, node, weight=cost)
 
-        visited = {} # (step_idx, finger_idx) -> min_cost
-        
-        best_final_path = None
-        target_len = len(targets)
-
-        while pq:
-            cost, step, finger, path = heapq.heappop(pq)
-            
-            # Global goal check
-            if step == target_len - 1:
-                return path
-
-            # Pruning
-            if (step, finger) in visited and visited[(step, finger)] <= cost:
-                continue
-            visited[(step, finger)] = cost
-            
-            # Expansions: Step -> Step + 1
-            next_step = step + 1
-            if next_step >= target_len:
-                continue
-                
+        # -----------------------------------------------------------------
+        # STEPS 1 .. target_len-1: Build exploded edges
+        # -----------------------------------------------------------------
+        for step in range(1, target_len):
+            prev_note, prev_is_black = targets[step - 1]
             curr_note, curr_is_black = targets[step]
-            next_note, next_is_black = targets[next_step]
-            
-            # Constraint: "if the note is the same play the same finger"
-            if curr_note == next_note:
-                 next_fingers_to_consider = [finger]
-            else:
-                 # "if changing note we will add 4 node" -> strictly different fingers
-                 next_fingers_to_consider = [f for f in self.fingers if f != finger]
 
-            for next_f in next_fingers_to_consider:
-                edge_cost = self._cost_fn(
-                    prev_finger=finger, 
-                    prev_note=curr_note, 
-                    prev_is_black=curr_is_black,
-                    curr_finger=next_f, 
-                    curr_note=next_note, 
-                    curr_is_black=next_is_black
-                )
-                
-                new_cost = cost + edge_cost
-                new_path = path + [next_f]
-                heapq.heappush(pq, (new_cost, next_step, next_f, new_path))
-                
-        return best_final_path if best_final_path else []
+            # Next-note context (for Rule 10, etc.)
+            if step + 1 < target_len:
+                next_note_val, next_is_black_val = targets[step + 1]
+            else:
+                next_note_val, next_is_black_val = None, None
+
+            # Finger constraint for this step
+            if prev_note == curr_note:
+                # Same note → same finger
+                allowed_fn = lambda prev_f: [prev_f]
+            else:
+                # Different note → different finger
+                allowed_fn = lambda prev_f: [f for f in self.fingers if f != prev_f]
+
+            # Iterate over all nodes at the previous step
+            prev_step_nodes = [n for n in G.nodes if isinstance(n, tuple) and len(n) == 3 and n[0] == step - 1]
+
+            for prev_node in prev_step_nodes:
+                _, pp_finger, prev_finger = prev_node  # pp = prev_prev
+
+                for curr_finger in allowed_fn(prev_finger):
+                    curr_node = (step, prev_finger, curr_finger)
+                    if curr_node not in G:
+                        G.add_node(curr_node)
+
+                    # Determine prev_prev note for Rule 4/5 context
+                    if step >= 2:
+                        pp_note, pp_is_black = targets[step - 2]
+                    elif start_finger is not None:
+                        pp_note, pp_is_black = start_note, start_is_black
+                    else:
+                        pp_note, pp_is_black = None, None
+
+                    cost = self._cost_fn(
+                        prev_finger=prev_finger,
+                        prev_note=prev_note,
+                        prev_is_black=prev_is_black,
+                        curr_finger=curr_finger,
+                        curr_note=curr_note,
+                        curr_is_black=curr_is_black,
+                        next_is_black=next_is_black_val,
+                        prev_prev_finger=pp_finger,
+                        prev_prev_note=pp_note,
+                        prev_prev_is_black=pp_is_black,
+                        hand=getattr(self, '_hand', 1),
+                    )
+
+                    # NetworkX allows multiple add_edge calls; keeps min weight via update
+                    if G.has_edge(prev_node, curr_node):
+                        if cost < G[prev_node][curr_node]['weight']:
+                            G[prev_node][curr_node]['weight'] = cost
+                    else:
+                        G.add_edge(prev_node, curr_node, weight=cost)
+
+        # -----------------------------------------------------------------
+        # Connect final step nodes to sink
+        # -----------------------------------------------------------------
+        final_nodes = [n for n in G.nodes if isinstance(n, tuple) and len(n) == 3 and n[0] == target_len - 1]
+        for node in final_nodes:
+            G.add_edge(node, SINK, weight=0)
+
+        # -----------------------------------------------------------------
+        # Shortest path
+        # -----------------------------------------------------------------
+        try:
+            path = nx.dijkstra_path(G, SOURCE, SINK, weight='weight')
+        except nx.NetworkXNoPath:
+            return []
+
+        # Extract finger sequence from path (skip source and sink)
+        finger_path = []
+        for node in path:
+            if isinstance(node, tuple) and len(node) == 3:
+                _, _, finger = node
+                if not finger_path or finger_path[-1] != finger or len(finger_path) < node[0] + 1:
+                    # Only append the curr_finger once per step
+                    if len(finger_path) <= node[0]:
+                        finger_path.append(finger)
+
+        return finger_path
 
     def _create_action(self, finger_idx, is_black):
         fingers = np.zeros(5, dtype=np.int8)

@@ -213,21 +213,51 @@ class TestRule10ThumbOnBlack:
 
 
 class TestRule12ThumbPassing:
-    """Test Rule 12: Thumb passing penalty."""
+    """Test Rule 12: Thumb passing penalty with directional relaxed-range gate."""
     
     def test_no_thumb_pass_no_penalty(self):
-        """Non-thumb transitions have no penalty."""
-        assert rule12_thumb_passing(2, False, 3, False) == 0.0
+        """Non-thumb transitions have no penalty regardless of span."""
+        assert rule12_thumb_passing(2, False, 3, False, span=-2) == 0.0
     
-    def test_thumb_pass_same_level(self):
-        """Thumb pass at same level (both white) has 1 point."""
-        assert rule12_thumb_passing(1, False, 2, False) == 1.0
-        assert rule12_thumb_passing(2, False, 1, False) == 1.0
+    def test_pass_outside_relaxed_range_same_level(self):
+        """Span outside directional relaxed range, same key color → 1pt."""
+        # 1→2, span=+8: pair (1,2) relaxed=[1,5]. 8>5 → pass → 1pt
+        assert rule12_thumb_passing(1, False, 2, False, span=+8) == 1.0
+        # 2→1, span=-8: directional relaxed=[-5,-1]. -8<-5 → pass → 1pt
+        assert rule12_thumb_passing(2, False, 1, False, span=-8) == 1.0
     
-    def test_thumb_pass_different_levels(self):
-        """Thumb pass across levels (white-black) has 3 points."""
-        assert rule12_thumb_passing(1, False, 2, True) == 3.0
-        assert rule12_thumb_passing(2, True, 1, False) == 3.0
+    def test_pass_thumb_on_black(self):
+        """Thumb on black outside relaxed → 3pts (hardest pass)."""
+        # 3→1(black), span=-3: pair (1,3) dir relaxed=[-7,-3]. -3 at boundary → pass
+        # But wait: -3 = actual_max_rel(-3), so -7 <= -3 <= -3 → within? 
+        # Nope: actual_min=-7, actual_max=-3. -3 <= -3 → within. Hmm.
+        # Need span OUTSIDE: use span=-8 instead
+        assert rule12_thumb_passing(3, False, 1, True, span=-8) == 3.0
+        # 1(black)→2(white), span=+8: outside [1,5] → pass → 3pts
+        assert rule12_thumb_passing(1, True, 2, False, span=+8) == 3.0
+    
+    def test_thumb_on_white_easy(self):
+        """Thumb on white, non-thumb on black = easy pass → 1pt."""
+        # 1(white)→2(black), span=+8: outside relaxed → 1pt
+        assert rule12_thumb_passing(1, False, 2, True, span=+8) == 1.0
+    
+    def test_within_relaxed_range_is_reach(self):
+        """Span within directional relaxed range (inclusive) → reach → 0pts."""
+        # 1→2, span=+3: pair (1,2) relaxed=[1,5]. 1<=3<=5 → reach → 0
+        assert rule12_thumb_passing(1, False, 2, False, span=+3) == 0.0
+        # 2→1, span=-3: dir relaxed=[-5,-1]. -5<=-3<=-1 → reach → 0
+        assert rule12_thumb_passing(2, False, 1, False, span=-3) == 0.0
+        # At boundaries: 1→2, span=+1 (=MinRel) → within → reach → 0
+        assert rule12_thumb_passing(1, False, 2, False, span=+1) == 0.0
+        # At boundaries: 1→2, span=+5 (=MaxRel) → within → reach → 0
+        assert rule12_thumb_passing(1, False, 2, False, span=+5) == 0.0
+    
+    def test_reverse_direction_is_pass(self):
+        """Span in opposite direction from finger ordering → outside bounds → pass."""
+        # 1→2, span=-5: dir relaxed=[1,5]. -5 < 1 → outside → pass → 1pt
+        assert rule12_thumb_passing(1, False, 2, False, span=-5) == 1.0
+        # 2→1, span=+5: dir relaxed=[-5,-1]. +5 > -1 → outside → pass → 1pt
+        assert rule12_thumb_passing(2, False, 1, False, span=+5) == 1.0
 
 
 class TestConsecutiveCost:
@@ -236,9 +266,9 @@ class TestConsecutiveCost:
     def test_simple_adjacent_notes(self):
         """Adjacent notes with natural fingering should have low cost."""
         # Thumb to index, white C→D (2 semitones), col 0→1
+        # Pair (1,2) MinRel=1, MaxRel=5: span=2 is in (1,5) → reach → R12=0
         cost = calculate_consecutive_cost(1, 0, False, 2, 1, False)
-        # Should include: thumb pass (1)
-        assert cost >= 1.0
+        assert cost == 0.0  # R2: abs(2)>=MinRel(1) → 0, R12: reach → 0
     
     def test_awkward_fingering_high_cost(self):
         """Awkward fingering should have higher cost."""

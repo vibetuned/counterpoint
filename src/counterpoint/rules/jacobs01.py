@@ -328,7 +328,7 @@ def calculate_jacobs_cost(
         curr_finger, curr_is_black,
         next_finger, next_is_black
     )
-    cost += rule12_thumb_passing(prev_finger, prev_is_black, curr_finger, curr_is_black)
+    cost += rule12_thumb_passing(prev_finger, prev_is_black, curr_finger, curr_is_black, span)
     
     return cost
 
@@ -376,6 +376,6 @@ def calculate_jacobs_consecutive_cost(
         prev_finger, prev_is_black,
         curr_finger, curr_is_black
     )
-    cost += rule12_thumb_passing(prev_finger, prev_is_black, curr_finger, curr_is_black)
+    cost += rule12_thumb_passing(prev_finger, prev_is_black, curr_finger, curr_is_black, span)
     
     return cost

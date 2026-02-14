@@ -12,6 +12,8 @@ from typing import Optional, List, Tuple
 
 from counterpoint.envs.rewards import RewardComponent
 from counterpoint.rules.parncutt97 import (
+    lattice_span_to_semitones,
+    is_playable,
     rule1_stretch,
     rule2_small_span,
     rule3_large_span,
@@ -82,9 +84,9 @@ class StretchPenalty(RewardComponent):
         if curr_note_info is None or prev_note_info is None:
             return 0.0
         
-        curr_note, _ = curr_note_info
-        prev_note, _ = prev_note_info
-        span = curr_note - prev_note
+        curr_note, curr_is_black = curr_note_info
+        prev_note, prev_is_black = prev_note_info
+        span = lattice_span_to_semitones(prev_note, prev_is_black, curr_note, curr_is_black)
         
         cost = rule1_stretch(prev_finger, curr_finger, span)
         return -cost * self.weight
@@ -114,9 +116,9 @@ class SmallSpanPenalty(RewardComponent):
         if curr_note_info is None or prev_note_info is None:
             return 0.0
         
-        curr_note, _ = curr_note_info
-        prev_note, _ = prev_note_info
-        span = curr_note - prev_note
+        curr_note, curr_is_black = curr_note_info
+        prev_note, prev_is_black = prev_note_info
+        span = lattice_span_to_semitones(prev_note, prev_is_black, curr_note, curr_is_black)
         
         cost = rule2_small_span(prev_finger, curr_finger, span)
         return -cost * self.weight
@@ -146,9 +148,9 @@ class LargeSpanPenalty(RewardComponent):
         if curr_note_info is None or prev_note_info is None:
             return 0.0
         
-        curr_note, _ = curr_note_info
-        prev_note, _ = prev_note_info
-        span = curr_note - prev_note
+        curr_note, curr_is_black = curr_note_info
+        prev_note, prev_is_black = prev_note_info
+        span = lattice_span_to_semitones(prev_note, prev_is_black, curr_note, curr_is_black)
         
         cost = rule3_large_span(prev_finger, curr_finger, span)
         return -cost * self.weight
@@ -500,6 +502,11 @@ class Parncutt97AllPenalties(RewardComponent):
         curr_note, curr_is_black = curr_note_info
         prev_note, prev_is_black = prev_note_info
         next_is_black = next_note_info[1] if next_note_info else None
+        
+        # Playability filter: moderate penalty for RL (not 1e9)
+        span = lattice_span_to_semitones(prev_note, prev_is_black, curr_note, curr_is_black)
+        if not is_playable(prev_finger, curr_finger, span):
+            return -20.0 * self.weight
         
         # Build history
         if len(self._history) < 2:

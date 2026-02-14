@@ -11,6 +11,7 @@ Legacy rules are kept for backwards compatibility.
 
 from counterpoint.rules.parncutt97 import (
     calculate_consecutive_cost,
+    lattice_span_to_semitones,
     rule1_stretch,
     rule2_small_span,
     rule3_large_span,
@@ -72,12 +73,12 @@ def rule_9_pinky_black(prev_finger, prev_is_black, curr_finger, curr_is_black):
     """
     return rule11_five_on_black(prev_finger, prev_is_black, curr_finger, curr_is_black)
 
-def rule_position_change(prev_finger, prev_note, curr_finger, curr_note):
+def rule_position_change(prev_finger, prev_note, prev_is_black, curr_finger, curr_note, curr_is_black):
     """
     Rule for position change size (legacy).
     Now computed via span rules in Parncutt module.
     """
-    span = curr_note - prev_note
+    span = lattice_span_to_semitones(prev_note, prev_is_black, curr_note, curr_is_black)
     # Combine stretch and span rules
     cost = rule1_stretch(prev_finger, curr_finger, span)
     cost += rule2_small_span(prev_finger, curr_finger, span)

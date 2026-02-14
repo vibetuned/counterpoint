@@ -1,14 +1,21 @@
 
 import numpy as np
 import heapq
-#from counterpoint.linear.rules import calculate_transition_cost
-#from counterpoint.rules import calculate_parncutt_cost 
-from counterpoint.rules import calculate_jacobs_cost
+from counterpoint.rules import calculate_jacobs_cost, calculate_parncutt_cost
+
+_COST_FN_MAP = {
+    "jacobs": calculate_jacobs_cost,
+    "parncutt": calculate_parncutt_cost,
+}
 
 class LinearAgent:
-    def __init__(self):
+    def __init__(self, rules: str = "jacobs"):
         # Finger indices: 1 to 5
         self.fingers = [1, 2, 3, 4, 5]
+        if rules not in _COST_FN_MAP:
+            raise ValueError(f"Unknown rules '{rules}'. Choose from: {list(_COST_FN_MAP.keys())}")
+        self._cost_fn = _COST_FN_MAP[rules]
+        self._rules_name = rules
 
     def visualize_step(self, env, save_path):
         """
@@ -88,7 +95,7 @@ class LinearAgent:
                  next_fingers = [f for f in self.fingers if f != finger]
                  
             for next_f in next_fingers:
-                cost = calculate_jacobs_cost(
+                cost = self._cost_fn(
                     prev_finger=finger,
                     prev_note=curr_note,
                     prev_is_black=curr_is_black,
@@ -256,7 +263,7 @@ class LinearAgent:
                  candidates = [f for f in self.fingers if f != root_finger]
             
             for f in candidates:
-                cost = calculate_jacobs_cost(
+                cost = self._cost_fn(
                     prev_finger=root_finger,
                     prev_note=root_note,
                     prev_is_black=root_is_black,
@@ -299,7 +306,7 @@ class LinearAgent:
                  next_fingers_to_consider = [f for f in self.fingers if f != finger]
 
             for next_f in next_fingers_to_consider:
-                edge_cost = calculate_jacobs_cost(
+                edge_cost = self._cost_fn(
                     prev_finger=finger, 
                     prev_note=curr_note, 
                     prev_is_black=curr_is_black,

@@ -2,36 +2,41 @@
 Parncutt 1997 Ergonomic Fingering Rules.
 
 Based on "An Ergonomic Model of Keyboard Fingering for Melodic Fragments" (1997).
-All values are adapted for a lattice model where 1 step = 2 semitones.
+All span values are in semitones, matching the original paper.
 """
 
 from typing import Tuple, Optional, List
 
+# Cost returned for fingerings outside practical span limits (unplayable).
+# Large enough that Dijkstra / shortest-path agents will never select these
+# edges, but finite so the graph stays well-defined.
+UNPLAYABLE_COST = 1e9
+
 # =============================================================================
 # FINGER SPAN TABLES
-# Original paper values are in semitones, divided by 2 for lattice steps.
+# Values are in semitones, matching the original paper exactly.
 # =============================================================================
 
 # Finger pair key: (min_finger, max_finger), e.g., (1, 2) means thumb-to-index
-# Values: (MinPrac, MinComf, MinRel, MaxRel, MaxComf, MaxPrac) in lattice steps
+# Values: (MinPrac, MinComf, MinRel, MaxRel, MaxComf, MaxPrac) in semitones
 FINGER_SPANS = {
-    (1, 2): (-2.5, -1.5, 0.5, 2.5, 4.0, 5.0),
-    (1, 3): (-2.0, -1.0, 1.5, 3.5, 5.0, 6.0),
-    (1, 4): (-1.5, -0.5, 2.5, 4.5, 6.0, 7.0),
-    (1, 5): (-0.5, 0.5, 3.5, 5.5, 6.5, 7.5),
-    (2, 3): (0.5, 0.5, 0.5, 1.0, 1.5, 2.5),
-    (2, 4): (0.5, 0.5, 1.5, 2.0, 2.5, 3.5),
-    (2, 5): (1.0, 1.0, 2.5, 3.0, 4.0, 5.0),
-    (3, 4): (0.5, 0.5, 0.5, 1.0, 1.0, 2.0),
-    (3, 5): (0.5, 0.5, 1.5, 2.0, 2.5, 3.5),
-    (4, 5): (0.5, 0.5, 0.5, 1.0, 1.5, 2.5),
+    (1, 2): (-5, -3,  1,  5,  8, 10),
+    (1, 3): (-4, -2,  3,  7, 10, 12),
+    (1, 4): (-3, -1,  5,  9, 12, 14),
+    (1, 5): (-1,  1,  7, 11, 13, 15),
+    (2, 3): ( 1,  1,  1,  2,  3,  5),
+    (2, 4): ( 1,  1,  3,  4,  5,  7),
+    (2, 5): ( 2,  2,  5,  6,  8, 10),
+    (3, 4): ( 1,  1,  1,  2,  2,  4),
+    (3, 5): ( 1,  1,  3,  4,  5,  7),
+    (4, 5): ( 1,  1,  1,  2,  3,  5),
 }
 
 # Indices for FINGER_SPANS tuple
 MIN_PRAC, MIN_COMF, MIN_REL, MAX_REL, MAX_COMF, MAX_PRAC = range(6)
 
 
-def get_finger_span_limits(finger1: int, finger2: int) -> Tuple[float, float, float, float, float, float]:
+def get_finger_span_limits(finger1: int, finger2: int) -> Tuple[int, int, int, int, int, int]:
     """
     Get span limits for a finger pair.
     
@@ -40,11 +45,60 @@ def get_finger_span_limits(finger1: int, finger2: int) -> Tuple[float, float, fl
         finger2: Second finger (1-5)
     
     Returns:
-        Tuple of (MinPrac, MinComf, MinRel, MaxRel, MaxComf, MaxPrac) in lattice steps.
-        Returns None if invalid finger pair.
+        Tuple of (MinPrac, MinComf, MinRel, MaxRel, MaxComf, MaxPrac) in semitones.
+        Returns (0,0,0,0,0,0) if invalid finger pair.
     """
     key = (min(finger1, finger2), max(finger1, finger2))
     return FINGER_SPANS.get(key, (0, 0, 0, 0, 0, 0))
+
+
+def is_playable(prev_finger: int, curr_finger: int, span: int, hand: int = 1) -> bool:
+    """
+    Check if a finger transition is physically playable (within practical span).
+    
+    The FINGER_SPANS table assumes ascending finger order (lower-numbered
+    finger first) with positive spans meaning rightward movement on the
+    keyboard.  When the higher-numbered finger is played *first* (descending
+    finger order), the practical bounds are negated and swapped so that the
+    direction is correctly accounted for.
+    
+    For the Left Hand (hand=2), the span is negated before checking because
+    the spatial finger-to-keyboard mapping is mirrored: ascending keyboard
+    movement uses descending finger numbers (5→4→3→2→1).
+    
+    For the same finger on the same note (span=0), always returns True.
+    
+    Args:
+        prev_finger: Previous finger (1-5)
+        curr_finger: Current finger (1-5)
+        span: Signed semitone distance (positive = ascending on keyboard)
+        hand: 1=RH, 2=LH
+    
+    Returns:
+        True if the transition is within practical limits.
+    """
+    if prev_finger == curr_finger:
+        return True  # Same finger on same note is always valid
+    
+    # LH mirror: ascending keyboard = descending fingers, so negate span
+    # to match the RH-oriented table.
+    if hand == 2:
+        span = -span
+    
+    limits = get_finger_span_limits(prev_finger, curr_finger)
+    min_prac = limits[MIN_PRAC]
+    max_prac = limits[MAX_PRAC]
+    
+    # The table is keyed (min_finger, max_finger) and assumes that the
+    # lower-numbered finger is to the LEFT (ascending order).  If the
+    # higher-numbered finger was played first, the expected direction
+    # is reversed, so we negate and swap the bounds.
+    if prev_finger > curr_finger:
+        actual_min, actual_max = -max_prac, -min_prac
+    else:
+        actual_min, actual_max = min_prac, max_prac
+    
+    return actual_min <= span <= actual_max
 
 
 def involves_thumb(finger1: int, finger2: int) -> bool:
@@ -53,9 +107,56 @@ def involves_thumb(finger1: int, finger2: int) -> bool:
 
 
 # =============================================================================
+# LATTICE-TO-SEMITONE CONVERSION
+# The piano environment uses a 52×2 lattice (columns = white keys, row 1 = sharps).
+# These functions convert lattice coordinates to absolute semitone values.
+# =============================================================================
+
+# Semitone offset of each white key within one octave (7 columns → 12 semitones)
+# Col 0=C(0), 1=D(2), 2=E(4), 3=F(5), 4=G(7), 5=A(9), 6=B(11)
+_WHITE_KEY_SEMITONES = [0, 2, 4, 5, 7, 9, 11]
+
+
+def lattice_to_semitone(column: int, is_black: bool) -> int:
+    """
+    Convert a lattice position to an absolute semitone number.
+    
+    Args:
+        column: White key column index (0–51 in the 52-column lattice)
+        is_black: Whether the note is on the accidental row (sharp of that column)
+    
+    Returns:
+        Absolute semitone number (MIDI-like, starting from 0 = C0)
+    """
+    octave = column // 7
+    key_in_octave = column % 7
+    semitone = octave * 12 + _WHITE_KEY_SEMITONES[key_in_octave]
+    if is_black:
+        semitone += 1  # sharp of the white key at that column
+    return semitone
+
+
+def lattice_span_to_semitones(
+    col1: int, is_black1: bool,
+    col2: int, is_black2: bool
+) -> int:
+    """
+    Compute the signed semitone distance between two lattice positions.
+    
+    Args:
+        col1, is_black1: First note (previous)
+        col2, is_black2: Second note (current)
+    
+    Returns:
+        Signed semitone distance (positive = ascending)
+    """
+    return lattice_to_semitone(col2, is_black2) - lattice_to_semitone(col1, is_black1)
+
+
+# =============================================================================
 # RULE 1: STRETCH RULE
 # Penalty for intervals exceeding MaxComf or below MinComf.
-# 2 points per lattice step outside the range.
+# 2 points per semitone outside the range.
 # =============================================================================
 
 def rule1_stretch(finger1: int, finger2: int, span: float) -> float:
@@ -68,10 +169,10 @@ def rule1_stretch(finger1: int, finger2: int, span: float) -> float:
     Args:
         finger1: Previous finger (1-5)
         finger2: Current finger (1-5)
-        span: Distance in lattice steps (signed: positive = ascending)
+        span: Distance in semitones (signed: positive = ascending)
     
     Returns:
-        Cost: 2 points per lattice step outside [MinComf, MaxComf]
+        Cost: 2 points per semitone outside [MinComf, MaxComf]
     """
     limits = get_finger_span_limits(finger1, finger2)
     min_comf, max_comf = limits[MIN_COMF], limits[MAX_COMF]
@@ -102,10 +203,10 @@ def rule2_small_span(finger1: int, finger2: int, span: float) -> float:
     Args:
         finger1: Previous finger (1-5)
         finger2: Current finger (1-5)
-        span: Distance in lattice steps (signed)
+        span: Distance in semitones (signed)
     
     Returns:
-        Cost: 1 point per step (thumb) or 2 points per step (non-thumb)
+        Cost: 1 point per semitone (thumb) or 2 points per semitone (non-thumb)
     """
     limits = get_finger_span_limits(finger1, finger2)
     min_rel = limits[MIN_REL]
@@ -134,10 +235,10 @@ def rule3_large_span(finger1: int, finger2: int, span: float) -> float:
     Args:
         finger1: Previous finger (1-5)
         finger2: Current finger (1-5)
-        span: Distance in lattice steps (signed)
+        span: Distance in semitones (signed)
     
     Returns:
-        Cost: 1 point per step (thumb) or 2 points per step (non-thumb)
+        Cost: 1 point per semitone (thumb) or 2 points per semitone (non-thumb)
     """
     limits = get_finger_span_limits(finger1, finger2)
     max_rel = limits[MAX_REL]
@@ -503,7 +604,11 @@ def calculate_parncutt_cost(
     Returns:
         Total cost as float
     """
-    span = curr_note - prev_note  # Signed span in lattice steps
+    span = lattice_span_to_semitones(prev_note, prev_is_black, curr_note, curr_is_black)
+    
+    # Enumeration filter: reject fingerings outside practical span limits
+    if not is_playable(prev_finger, curr_finger, span, hand):
+        return UNPLAYABLE_COST
     
     cost = 0.0
     
@@ -569,7 +674,11 @@ def calculate_consecutive_cost(
     Returns:
         Total cost as float
     """
-    span = curr_note - prev_note
+    span = lattice_span_to_semitones(prev_note, prev_is_black, curr_note, curr_is_black)
+    
+    # Enumeration filter: reject fingerings outside practical span limits
+    if not is_playable(prev_finger, curr_finger, span):
+        return UNPLAYABLE_COST
     
     cost = 0.0
     

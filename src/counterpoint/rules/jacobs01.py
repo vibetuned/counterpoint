@@ -6,12 +6,12 @@ of Parncutt, Sloboda, Clarke, Raekallio, and Desain" (2001).
 
 Key changes from Parncutt 1997:
   - Rule A: Physical distance mapping (mm-based bins instead of raw semitone count)
-  - Rule C: Unified large-span rule (1 pt/step for ALL finger pairs)
+  - Rule C: Unified large-span rule (1 pt/semitone for ALL finger pairs)
   - Rule 6 mod: Only finger 4 is weak (finger 5 removed)
   - Rule 7 disc: Three-four-five rule disabled
   - Rules 10/11: Kept same as Parncutt (re-justified ergonomically)
 
-All values are adapted for a lattice model where 1 step = 2 semitones.
+All span values are in semitones, matching the original paper.
 """
 
 import math
@@ -24,6 +24,13 @@ from counterpoint.rules.parncutt97 import (
     MIN_PRAC, MIN_COMF, MIN_REL, MAX_REL, MAX_COMF, MAX_PRAC,
     get_finger_span_limits,
     involves_thumb,
+    
+    # Playability filter
+    is_playable,
+    UNPLAYABLE_COST,
+    
+    # Lattice-to-semitone conversion
+    lattice_span_to_semitones,
     
     # Unchanged rules (imported directly)
     rule1_stretch,
@@ -48,9 +55,6 @@ from counterpoint.rules.parncutt97 import (
 # Octave width = 165 mm, 12 semitones → ~13.75 mm per semitone
 SEMITONE_DISTANCE_MM = 13.75
 
-# In our lattice model, 1 step = 2 semitones
-LATTICE_STEP_MM = SEMITONE_DISTANCE_MM * 2  # ~27.5 mm per lattice step
-
 
 # =============================================================================
 # RULE A: PHYSICAL DISTANCE MAPPING
@@ -63,16 +67,15 @@ LATTICE_STEP_MM = SEMITONE_DISTANCE_MM * 2  # ~27.5 mm per lattice step
 #                           B_upper(i) = (d_{i+1} + d_i) / 2
 # 4. If D falls in bin i, the effective span = i semitones
 #
-# In our lattice:
-# - The column difference IS already physical distance (uniform grid)
-# - 1 lattice step = 2 semitones = ~27.5 mm
-# - We convert lattice span → mm → find semitone bin → convert back to
-#   lattice units (÷2) for comparison against FINGER_SPANS table
+# Now that spans are already in semitones, the physical distance mapping
+# converts: semitone span → physical mm → semitone bin.
+# This corrects for the non-uniform physical distances between keys
+# (e.g., E-F is ~13.75mm but C-D is ~27.5mm despite both being 2 semitones).
 # =============================================================================
 
-def lattice_span_to_physical_mm(lattice_span: float) -> float:
-    """Convert lattice span to physical distance in millimeters."""
-    return abs(lattice_span) * LATTICE_STEP_MM
+def semitone_span_to_physical_mm(semitone_span: float) -> float:
+    """Convert a semitone span to physical distance in millimeters."""
+    return abs(semitone_span) * SEMITONE_DISTANCE_MM
 
 
 def physical_mm_to_semitone_bin(distance_mm: float) -> int:
@@ -96,25 +99,24 @@ def physical_mm_to_semitone_bin(distance_mm: float) -> int:
     return round(distance_mm / SEMITONE_DISTANCE_MM)
 
 
-def physical_distance_to_effective_lattice_span(lattice_span: float) -> float:
+def physical_distance_to_effective_semitone_span(semitone_span: float) -> float:
     """
-    Rule A: Convert lattice span to effective lattice span via physical distance bins.
+    Rule A: Convert semitone span to effective semitone span via physical distance bins.
     
-    Pipeline: lattice_span → physical mm → semitone bin → effective lattice span
+    Pipeline: semitone_span → physical mm → semitone bin
     
-    In our lattice model this is mostly a pass-through since the grid is uniform,
-    but we implement it faithfully for correctness.
+    Since spans are already in semitones, this is essentially a pass-through
+    (rounding to the nearest integer), but we implement it faithfully.
     
     Args:
-        lattice_span: Raw span in lattice steps (signed)
+        semitone_span: Raw span in semitones (signed)
     
     Returns:
-        Effective span in lattice steps (unsigned) after physical distance mapping
+        Effective span in semitones (unsigned) after physical distance mapping
     """
-    physical_mm = lattice_span_to_physical_mm(lattice_span)
+    physical_mm = semitone_span_to_physical_mm(semitone_span)
     semitone_bin = physical_mm_to_semitone_bin(physical_mm)
-    # Convert semitone bin back to lattice units
-    return semitone_bin / 2.0
+    return float(semitone_bin)
 
 
 # =============================================================================
@@ -127,23 +129,23 @@ def jacobs_large_span(finger1: int, finger2: int, span: float) -> float:
     """
     Rule C (Jacobs): Unified Large-Span Rule.
     
-    Unlike Parncutt (2x for non-thumb pairs), Jacobs uses 1 point per step
+    Unlike Parncutt (2x for non-thumb pairs), Jacobs uses 1 point per semitone
     for ALL finger pairs. Jacobs argues stretching non-thumb fingers is not
     inherently more difficult than stretching the thumb.
     
     Args:
         finger1: Previous finger (1-5)
         finger2: Current finger (1-5)
-        span: Distance in lattice steps (signed)
+        span: Distance in semitones (signed)
     
     Returns:
-        Cost: 1 point per lattice step above MaxRel (for ALL pairs)
+        Cost: 1 point per semitone above MaxRel (for ALL pairs)
     """
     limits = get_finger_span_limits(finger1, finger2)
     max_rel = limits[MAX_REL]
     
     # Use effective span via physical distance mapping (Rule A)
-    effective_span = physical_distance_to_effective_lattice_span(span)
+    effective_span = physical_distance_to_effective_semitone_span(span)
     
     if effective_span > max_rel:
         return 1.0 * (effective_span - max_rel)  # Always 1x, never 2x
@@ -201,21 +203,21 @@ def jacobs_stretch(finger1: int, finger2: int, span: float) -> float:
     """
     Rule 1 with Jacobs' Rule A: Stretch with physical distance mapping.
     
-    Same as Parncutt's Rule 1 but uses effective lattice span from
+    Same as Parncutt's Rule 1 but uses effective semitone span from
     physical distance bins.
     
     Args:
         finger1: Previous finger (1-5)
         finger2: Current finger (1-5)
-        span: Distance in lattice steps (signed)
+        span: Distance in semitones (signed)
     
     Returns:
-        Cost: 2 points per lattice step outside [MinComf, MaxComf]
+        Cost: 2 points per semitone outside [MinComf, MaxComf]
     """
     limits = get_finger_span_limits(finger1, finger2)
     min_comf, max_comf = limits[MIN_COMF], limits[MAX_COMF]
     
-    effective_span = physical_distance_to_effective_lattice_span(span)
+    effective_span = physical_distance_to_effective_semitone_span(span)
     
     if effective_span > max_comf:
         return 2.0 * (effective_span - max_comf)
@@ -229,21 +231,21 @@ def jacobs_small_span(finger1: int, finger2: int, span: float) -> float:
     """
     Rule 2 with Jacobs' Rule A: Small-Span with physical distance mapping.
     
-    Same as Parncutt's Rule 2 but uses effective lattice span from
+    Same as Parncutt's Rule 2 but uses effective semitone span from
     physical distance bins.
     
     Args:
         finger1: Previous finger (1-5)
         finger2: Current finger (1-5)
-        span: Distance in lattice steps (signed)
+        span: Distance in semitones (signed)
     
     Returns:
-        Cost: 1 point per step (thumb) or 2 points per step (non-thumb)
+        Cost: 1 point per semitone (thumb) or 2 points per semitone (non-thumb)
     """
     limits = get_finger_span_limits(finger1, finger2)
     min_rel = limits[MIN_REL]
     
-    effective_span = physical_distance_to_effective_lattice_span(span)
+    effective_span = physical_distance_to_effective_semitone_span(span)
     
     if effective_span < min_rel:
         multiplier = 1.0 if involves_thumb(finger1, finger2) else 2.0
@@ -281,7 +283,11 @@ def calculate_jacobs_cost(
     Returns:
         Total cost as float
     """
-    span = curr_note - prev_note  # Signed span in lattice steps
+    span = lattice_span_to_semitones(prev_note, prev_is_black, curr_note, curr_is_black)
+    
+    # Enumeration filter: reject fingerings outside practical span limits
+    if not is_playable(prev_finger, curr_finger, span, hand):
+        return UNPLAYABLE_COST
     
     cost = 0.0
     
@@ -343,7 +349,11 @@ def calculate_jacobs_consecutive_cost(
     Returns:
         Total cost as float
     """
-    span = curr_note - prev_note
+    span = lattice_span_to_semitones(prev_note, prev_is_black, curr_note, curr_is_black)
+    
+    # Enumeration filter: reject fingerings outside practical span limits
+    if not is_playable(prev_finger, curr_finger, span):
+        return UNPLAYABLE_COST
     
     cost = 0.0
     

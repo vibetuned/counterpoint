@@ -86,12 +86,13 @@ def linear(
     score_type: str = typer.Option(None, help="Score generator type: scale, chord, arpeggio, mei"),
     mei_path: str = typer.Option(None, help="Path to MEI file(s) when using mei generator"),
     hand: int = typer.Option(None, help="Hand to use (1=RH, 2=LH). Overrides config."),
+    rules: str = typer.Option("jacobs", help="Rule set to use: jacobs, parncutt"),
 ):
     """
     Run the Linear Debugging Agent (Dijkstra) on the Piano environment.
     """
     from counterpoint.linear import run_linear_agent
-    run_linear_agent(debug=debug, score_type=score_type, mei_path=mei_path, hand=hand)
+    run_linear_agent(debug=debug, score_type=score_type, mei_path=mei_path, hand=hand, rules=rules)
 
 @app.command()
 def annotate(

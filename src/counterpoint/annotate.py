@@ -32,7 +32,7 @@ def _collect_fingerings_linear(env, rules: str = "jacobs") -> List[Tuple[str, in
     """
     from counterpoint.linear.agent import LinearAgent
     
-    agent = LinearAgent()
+    agent = LinearAgent(rules=rules)
     
     obs, _ = env.reset()
     terminated = False

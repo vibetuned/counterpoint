@@ -21,6 +21,8 @@ from counterpoint.rules.jacobs01 import (
     jacobs_weak_finger,
     jacobs_three_four_five,
     calculate_jacobs_consecutive_cost,
+    lattice_span_to_semitones,
+    is_playable,
     rule4_position_change_count,
     rule5_position_change_size,
     rule8_three_to_four,
@@ -65,9 +67,9 @@ class JacobsStretchPenalty(RewardComponent):
         if curr_note_info is None or prev_note_info is None:
             return 0.0
         
-        curr_note, _ = curr_note_info
-        prev_note, _ = prev_note_info
-        span = curr_note - prev_note
+        curr_note, curr_is_black = curr_note_info
+        prev_note, prev_is_black = prev_note_info
+        span = lattice_span_to_semitones(prev_note, prev_is_black, curr_note, curr_is_black)
         
         cost = jacobs_stretch(prev_finger, curr_finger, span)
         return -cost * self.weight
@@ -96,9 +98,9 @@ class JacobsSmallSpanPenalty(RewardComponent):
         if curr_note_info is None or prev_note_info is None:
             return 0.0
         
-        curr_note, _ = curr_note_info
-        prev_note, _ = prev_note_info
-        span = curr_note - prev_note
+        curr_note, curr_is_black = curr_note_info
+        prev_note, prev_is_black = prev_note_info
+        span = lattice_span_to_semitones(prev_note, prev_is_black, curr_note, curr_is_black)
         
         cost = jacobs_small_span(prev_finger, curr_finger, span)
         return -cost * self.weight
@@ -127,9 +129,9 @@ class JacobsLargeSpanPenalty(RewardComponent):
         if curr_note_info is None or prev_note_info is None:
             return 0.0
         
-        curr_note, _ = curr_note_info
-        prev_note, _ = prev_note_info
-        span = curr_note - prev_note
+        curr_note, curr_is_black = curr_note_info
+        prev_note, prev_is_black = prev_note_info
+        span = lattice_span_to_semitones(prev_note, prev_is_black, curr_note, curr_is_black)
         
         cost = jacobs_large_span(prev_finger, curr_finger, span)
         return -cost * self.weight
@@ -198,6 +200,11 @@ class Jacobs01AllPenalties(RewardComponent):
         curr_note, curr_is_black = curr_note_info
         prev_note, prev_is_black = prev_note_info
         next_is_black = next_note_info[1] if next_note_info else None
+        
+        # Playability filter: moderate penalty for RL (not 1e9)
+        span = lattice_span_to_semitones(prev_note, prev_is_black, curr_note, curr_is_black)
+        if not is_playable(prev_finger, curr_finger, span):
+            return -20.0 * self.weight
         
         # Build history
         if len(self._history) < 2:
